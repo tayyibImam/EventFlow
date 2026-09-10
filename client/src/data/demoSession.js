@@ -6,6 +6,8 @@ export function clearDemoSession() {
 
 export const demoUsers = {
   Organizer: { role: 'Organizer', firstName: 'Meyadur', lastName: 'Rahman', email: 'meyadurrahman777@gmail.com', initials: 'MR' },
+  Staff: { role: 'Staff', firstName: 'Tariqul', lastName: 'Islam', email: 'staff@eventflow.io', initials: 'TI' },
+  Guest: { role: 'Guest', firstName: 'Salman', lastName: 'Chowdhury', email: 'guest@eventflow.io', initials: 'SC' },
   Admin: { role: 'Admin', firstName: 'Zayid', lastName: 'Karim', email: 'zayid.karim@eventflow.com', initials: 'ZK' },
 }
 

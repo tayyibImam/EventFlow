@@ -71,6 +71,8 @@ input, select { border-color: var(--line-strong); }
 	.feature-grid-v2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+ .modal-grid { gap: 10px; }.modal-grid label { min-width: 0; }.all-events-section { margin-top: 28px; }
+
 @media (max-width: 600px) {
 	.topbar { height: 58px; }
 	.breadcrumbs { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -156,3 +158,10 @@ input, select { border-color: var(--line-strong); }
 .auth-page .auth-card { border-top-color: var(--page-navy); }
 .auth-page .auth-tabs .active { color: var(--page-navy); }
 .auth-page .role-card-option.admin.selected { border-color: #bd6872; }
+.auth-page .auth-card { border: 0; box-shadow: 0 12px 30px rgba(23,57,88,.12); }
+.form-error { color: #b42336; background: #fff1f2; border-radius: 4px; font-size: 9px; line-height: 1.4; margin: -3px 0 0; padding: 8px 10px; }
+
+.auth-page .auth-submit, .marketing-page .marketing-dark-button,
+.marketing-page .marketing-workspace, .get-started-page .landing-primary {
+  background: var(--navy);
+}
