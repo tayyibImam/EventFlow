@@ -125,3 +125,34 @@ input, select { border-color: var(--line-strong); }
 	.marketing-footer { grid-template-columns: 1fr; margin: 0 16px; gap: 12px; }
 	.marketing-footer > small { text-align: left; }
 }
+
+/* Carry the dashboard palette through public and auth pages. */
+.marketing-page a, .auth-page a, .not-found-page a, .app-shell button, .app-shell a { -webkit-tap-highlight-color: transparent; }
+.marketing-page a, .auth-page a, .not-found-page a { transition: color .16s ease, background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.marketing-page .marketing-header nav a:hover, .marketing-page .marketing-actions > a:not(.marketing-workspace):hover { color: var(--page-navy); transform: translateY(-1px); }
+.marketing-page .marketing-brand:hover { transform: translateY(-1px); }
+.marketing-page .marketing-workspace:hover, .marketing-page .marketing-dark-button:hover { color: #fff; box-shadow: 0 6px 14px rgba(23,57,88,.2); transform: translateY(-2px); }
+.marketing-page .marketing-light-button:hover, .marketing-page .marketing-outline-button:hover { transform: translateY(-2px); box-shadow: 0 5px 12px rgba(23,57,88,.1); }
+.marketing-page .capability-grid article, .marketing-page .workflow-grid-v2 article, .marketing-page .integration-list article, .marketing-page .workspace-card, .marketing-page .marketing-mockup { transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.marketing-page .capability-grid article:hover, .marketing-page .workflow-grid-v2 article:hover, .marketing-page .integration-list article:hover, .marketing-page .workspace-card:hover { border-color: #9db8c8; box-shadow: 0 8px 18px rgba(23,57,88,.09); transform: translateY(-3px); }
+.marketing-page .marketing-mockup:hover { border-color: #8aaabe; box-shadow: 0 22px 46px rgba(23,57,88,.19); transform: translateY(-2px); }
+.auth-page .auth-brand:hover, .auth-page .auth-header-link:hover, .auth-page .auth-switch a:hover, .auth-page .label-row a:hover { transform: translateY(-1px); }
+.auth-page .auth-card:hover { box-shadow: 0 14px 32px rgba(23,57,88,.11); }
+.auth-page .auth-tabs a:hover, .auth-page .role-card-option:hover, .auth-page .provider-row button:hover { transform: translateY(-1px); }
+.auth-page .auth-submit:hover, .not-found-page .not-found-link:hover { transform: translateY(-2px); box-shadow: 0 7px 16px rgba(23,57,88,.2); }
+.app-shell .nav-item, .app-shell .text-button, .app-shell .outline-button, .app-shell .button, .app-shell .icon-button, .app-shell .profile, .app-shell .perspective-item, .app-shell .sign-out { transition: color .16s ease, background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.app-shell .nav-item:hover, .app-shell .text-button:hover, .app-shell .outline-button:hover, .app-shell .button:hover, .app-shell .profile:hover, .app-shell .perspective-item:hover { transform: translateY(-1px); }
+.app-shell .event-card, .app-shell .metric-card, .app-shell .side-card, .app-shell .audit-card { transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.app-shell .event-card:hover, .app-shell .metric-card:hover, .app-shell .side-card:hover, .app-shell .audit-card:hover { border-color: #9db8c8; box-shadow: 0 8px 18px rgba(23,57,88,.08); transform: translateY(-2px); }
+.app-shell .button-primary:hover { box-shadow: 0 6px 14px rgba(234,179,55,.25); }
+.app-shell .notification-button:hover, .app-shell .icon-button:hover { color: var(--page-navy); transform: translateY(-1px); }
+.marketing-page, .auth-page, .not-found-page { --page-navy: #173958; --page-gold: #eab337; }
+.marketing-page .marketing-header, .auth-page .auth-header { border-top-color: var(--page-navy); }
+.marketing-page .marketing-brand, .marketing-page .marketing-hero h1, .marketing-page .marketing-section-head h2, .marketing-page .marketing-cta h2, .auth-page .auth-brand, .auth-page .auth-card h1 { color: var(--page-navy); }
+.marketing-page .marketing-brand .brand-mark, .marketing-page .marketing-workspace, .marketing-page .marketing-dark-button, .marketing-page .marketing-cta, .auth-page .auth-card, .auth-page .auth-submit, .auth-page .role-card-option.selected, .not-found-page .not-found-link { border-color: var(--page-navy); }
+.marketing-page .marketing-brand .brand-mark, .marketing-page .marketing-workspace, .marketing-page .marketing-dark-button, .marketing-page .marketing-cta, .auth-page .auth-submit, .auth-page .role-card-option.selected, .not-found-page .not-found-link { background: var(--page-navy); }
+.marketing-page .marketing-hero h1 em, .marketing-page .marketing-section-head h2 em, .marketing-page .marketing-kicker, .marketing-page .marketing-section-head > span, .marketing-page .marketing-cta > span { color: var(--page-gold); }
+.marketing-page .marketing-light-button:hover, .marketing-page .marketing-dark-button:hover, .auth-page .auth-submit:hover { border-color: #21496b; background: #21496b; }
+.auth-page .auth-card { border-top-color: var(--page-navy); }
+.auth-page .auth-tabs .active { color: var(--page-navy); }
+.auth-page .role-card-option.admin.selected { border-color: #bd6872; }
