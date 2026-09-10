@@ -1,0 +1,12 @@
+import { Bell, ChevronDown, LogOut, Menu, Search } from 'lucide-react'
+import { useState } from 'react'
+
+export default function Topbar({ onMenuToggle, admin = false, onSwitchPerspective }) {
+  const [profileOpen, setProfileOpen] = useState(false)
+
+  return <header className="topbar">
+    <button className="icon-button menu-button" onClick={onMenuToggle} aria-label="Toggle navigation"><Menu size={20} /></button>
+    <div className="breadcrumbs"><span>EventFlow</span><span className="crumb-separator">/</span><strong>{admin ? 'Admin Control Center' : 'EventFlow Organizer Hub'}</strong></div>
+    <div className="topbar-actions"><div className="search-box"><Search size={16} /><input aria-label="Search" placeholder={admin ? 'Search users, events, logs...' : 'Search events, guests, tasks...'} /></div><button className="icon-button notification-button" aria-label="Notifications"><Bell size={18} /><span className="notification-dot" /></button><div className="profile-menu"><button className="profile" onClick={() => setProfileOpen((open) => !open)} aria-expanded={profileOpen} aria-haspopup="menu"><div className="avatar avatar-navy">{admin ? 'ZK' : 'MR'}</div><div className="profile-text"><strong>{admin ? 'Zayid Karim' : 'Meyadur Rahman'}</strong><small>{admin ? 'Admin' : 'Organizer'}</small></div><ChevronDown size={15} /></button>{profileOpen && <div className="account-menu" role="menu"><div className="account-heading"><strong>{admin ? 'Zayid Karim' : 'Meyadur Rahman'}</strong><span>{admin ? 'zayid.karim@eventflow.com' : 'meyadurrahman777@gmail.com'}</span><em>Role: {admin ? 'Admin' : 'Organizer'}</em></div><div className="perspective-label">Switch perspective:</div><button className={`perspective-item ${!admin ? 'selected' : ''}`} onClick={() => onSwitchPerspective(false)} role="menuitem"><span>Organizer View</span><small>Meyadur Rahman</small></button><button className={`perspective-item ${admin ? 'selected' : ''}`} onClick={() => onSwitchPerspective(true)} role="menuitem"><span>Admin View</span><small>Zayid Karim</small></button><button className="perspective-item" role="menuitem"><span>Staff View</span><small>Tariqul Islam</small></button><button className="perspective-item" role="menuitem"><span>Guest View</span><small>Dr. Salman Chowdhury</small></button><button className="sign-out" role="menuitem"><LogOut size={14} /> Sign Out of EventFlow</button></div>}</div></div>
+  </header>
+}
