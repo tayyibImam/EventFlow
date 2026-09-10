@@ -3,8 +3,14 @@ import Sidebar from '../components/Sidebar'
 import Topbar from '../components/Topbar'
 import Dashboard from '../pages/Dashboard'
 import AdminDashboard from '../pages/AdminDashboard'
+import GetStarted from '../pages/GetStarted'
+import { CreateAccount, SignIn } from '../pages/AuthPages'
 
 export default function AppRoutes() {
+  if (window.location.pathname === '/get-started') return <GetStarted />
+  if (window.location.pathname === '/sign-in') return <SignIn />
+  if (window.location.pathname === '/create-account') return <CreateAccount />
+
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [activeNav, setActiveNav] = useState('Dashboard')
   const [adminView, setAdminView] = useState(false)

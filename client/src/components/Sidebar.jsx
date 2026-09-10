@@ -16,7 +16,7 @@ export default function Sidebar({ activeNav, onNavigate, open, admin = false }) 
     <div className="brand"><span className="brand-mark"><i className="fa-regular fa-calendar-check" aria-hidden="true" /></span><span>Event<span>Flow</span></span></div>
     <div className="workspace-label">{admin ? 'Admin Control Center' : 'Event Planning &amp; Management'}</div>
     <nav className="nav-list" aria-label="Main navigation">
-      {items.map(([label, Icon]) => <button key={label} className={`nav-item ${activeNav === label ? 'active' : ''}`} onClick={() => onNavigate(label)}><Icon size={17} /><span>{label}</span>{label === 'Tasks' && <span className="nav-count">4</span>}</button>)}
+      {items.map(([label, Icon]) => <button key={label} className={`nav-item ${activeNav === label ? 'active' : ''}`} onClick={() => onNavigate(label)}><Icon size={17} /><span>{label}</span></button>)}
     </nav>
     <div className="sidebar-bottom"><button className="nav-item"><Settings size={17} /><span>Settings</span></button><div className="profile-mini"><div className="avatar avatar-amber">ZK</div><div><strong>{admin ? 'Zayid Karim' : 'Meyadur Rahman'}</strong><small>Active Role · {admin ? 'Admin' : 'Organizer'}</small></div><MoreHorizontal size={16} /></div></div>
   </aside>
