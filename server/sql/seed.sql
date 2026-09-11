@@ -1,3 +1,17 @@
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE event_guests;
+TRUNCATE TABLE event_vendors;
+TRUNCATE TABLE tasks;
+TRUNCATE TABLE event_schedule;
+TRUNCATE TABLE feedback;
+TRUNCATE TABLE events;
+TRUNCATE TABLE guests;
+TRUNCATE TABLE vendors;
+TRUNCATE TABLE venues;
+TRUNCATE TABLE categories;
+TRUNCATE TABLE users;
+SET FOREIGN_KEY_CHECKS = 1;
+
 INSERT INTO users (name, email, password_hash, role) VALUES
 ('Admin User', 'admin@eventflow.com', 'hashed_placeholder', 'admin'),
 ('Mirza Tafhim Osman', 'organizer@eventflow.com', 'hashed_placeholder', 'organizer'),

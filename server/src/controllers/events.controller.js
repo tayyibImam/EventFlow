@@ -55,4 +55,51 @@ async function createEvent(req, res) {
   }
 }
 
-module.exports = { getAllEvents, getEventById, createEvent };
+async function updateEvent(req, res) {
+  try {
+    const { id } = req.params;
+    const {
+      title, description, category_id, organizer_id,
+      venue_id, start_datetime, end_datetime, status, budget
+    } = req.body;
+
+    const [existing] = await pool.query('SELECT * FROM events WHERE event_id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    await pool.query(
+      `UPDATE events SET
+        title = ?, description = ?, category_id = ?, organizer_id = ?,
+        venue_id = ?, start_datetime = ?, end_datetime = ?, status = ?, budget = ?
+       WHERE event_id = ?`,
+      [title, description, category_id, organizer_id,
+       venue_id, start_datetime, end_datetime, status, budget, id]
+    );
+
+    const [updated] = await pool.query('SELECT * FROM events WHERE event_id = ?', [id]);
+    res.json(updated[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update event' });
+  }
+}
+
+async function deleteEvent(req, res) {
+  try {
+    const { id } = req.params;
+
+    const [existing] = await pool.query('SELECT * FROM events WHERE event_id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    await pool.query('DELETE FROM events WHERE event_id = ?', [id]);
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete event' });
+  }
+}
+
+module.exports = { getAllEvents, getEventById, createEvent, updateEvent, deleteEvent };
