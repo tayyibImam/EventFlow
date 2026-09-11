@@ -3,12 +3,12 @@
 // feature cards, team roles, and footer. Includes navigation handler
 // for redirecting between pages.
 
-import { useEffect } from 'react'
-import { ArrowRight, BarChart3, CalendarCheck2, Check, CheckCircle2, ClipboardCheck, FolderKanban, Menu, ShieldCheck, Sparkles, Users, WalletCards } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowRight, BarChart3, CalendarDays, Check, CheckCircle2, ClipboardCheck, FolderKanban, Menu, ShieldCheck, Sparkles, Users, WalletCards, X } from 'lucide-react'
 
 // 3-step workflow for onboarding
 const workflow = [
-  ['01', 'Create your event', 'Set the basics, invite your team, and give every event a clear home.', CalendarCheck2],
+  ['01', 'Create your event', 'Set the basics, invite your team, and give every event a clear home.', CalendarDays],
   ['02', 'Plan every detail', 'Coordinate venues, vendors, guests, tasks, and schedules in one workspace.', ClipboardCheck],
   ['03', 'Stay in control', 'Track progress in real time and keep everyone aligned through event day.', BarChart3],
 ]
@@ -29,18 +29,15 @@ const roles = [
 ]
 
 export default function GetStarted() {
-  // Navigation handler: intercepts clicks on logo links to redirect to correct pages
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  // Close mobile menu on resize to desktop
   useEffect(() => {
-    const handleLandingNavigation = (event) => {
-      const link = event.target.closest('a[href="/"]')
-      if (!link) return
-      event.preventDefault()
-      // Determine destination based on link text content
-      window.location.href = link.textContent.includes('Sign in') ? '/sign-in' : link.textContent.includes('EventFlow') ? '/get-started' : '/create-account'
+    const handleResize = () => {
+      if (window.innerWidth > 820) setMenuOpen(false)
     }
-    document.addEventListener('click', handleLandingNavigation)
-    // Cleanup listener on unmount
-    return () => document.removeEventListener('click', handleLandingNavigation)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
   }, [])
 
   return (
@@ -56,8 +53,26 @@ export default function GetStarted() {
           <a href="#features">Capabilities</a>
           <a href="#roles">For your team</a>
         </div>
-        <a className="landing-login" href="/">Sign in <ArrowRight size={15} /></a>
-        <button className="landing-menu" aria-label="Open navigation"><Menu size={18} /></button>
+        <a className="landing-login" href="/sign-in">Sign in <ArrowRight size={15} /></a>
+        <button 
+          className="landing-menu" 
+          aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+
+        {/* Mobile dropdown menu */}
+        {menuOpen && (
+          <div className="landing-mobile-menu">
+            <a href="#workflow" onClick={() => setMenuOpen(false)}>How it works</a>
+            <a href="#features" onClick={() => setMenuOpen(false)}>Capabilities</a>
+            <a href="#roles" onClick={() => setMenuOpen(false)}>For your team</a>
+            <a href="/sign-in" className="mobile-sign-in" onClick={() => setMenuOpen(false)}>Sign in <ArrowRight size={14} /></a>
+            <a href="/create-account" className="landing-primary mobile-workspace-cta" onClick={() => setMenuOpen(false)}>Open your workspace <ArrowRight size={15} /></a>
+          </div>
+        )}
       </nav>
 
       {/* Hero section: copy on the left, preview on the right */}
@@ -69,7 +84,7 @@ export default function GetStarted() {
           <p>EventFlow gives your team one calm, connected workspace to plan, coordinate, and deliver exceptional events from first idea to final guest.</p>
           {/* Primary and secondary action buttons */}
           <div className="hero-actions">
-            <a className="landing-primary" href="/">Open your workspace <ArrowRight size={16} /></a>
+            <a className="landing-primary" href="/create-account">Open your workspace <ArrowRight size={16} /></a>
             <a className="landing-secondary" href="#workflow">See how it works</a>
           </div>
           {/* Proof section with avatar previews */}
@@ -186,4 +201,3 @@ export default function GetStarted() {
     </main>
   )
 }
-

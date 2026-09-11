@@ -1,7 +1,8 @@
 // LandingPage — Public marketing homepage with hero, capabilities grid,
 // workflow steps, CTA, and footer. Uses hardcoded data for the workspace preview simulation.
 
-import { ArrowRight, BarChart3, CalendarDays, Check, CheckCircle2, ChevronRight, ClipboardCheck, Clock3, LayoutDashboard, Mail, Menu, ShieldCheck, Users, WalletCards } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowRight, BarChart3, CalendarDays, Check, CheckCircle2, ChevronRight, ClipboardCheck, Clock3, LayoutDashboard, Mail, Menu, ShieldCheck, Users, WalletCards, X } from 'lucide-react'
 
 // Capabilities data: [Title, [bullet descriptions], Icon component]
 const capabilities = [
@@ -109,6 +110,8 @@ function Capabilities() {
 }
 
 export default function LandingPage() {
+  const [menuOpen, setMenuOpen] = useState(false)
+
   return (
     <main className="marketing-page">
       {/* Top navigation: logo, feature links, sign-in / open-workspace CTAs */}
@@ -126,7 +129,27 @@ export default function LandingPage() {
           <a href="/sign-in">Sign In</a>
           <a className="marketing-workspace" href="/create-account"><LayoutDashboard size={13} /> Open Workspace</a>
         </div>
-        <button className="marketing-menu" aria-label="Open menu"><Menu size={17} /></button>
+        <button 
+          className="marketing-menu" 
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((o) => !o)}
+        >
+          {menuOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
+
+        {/* Mobile Dropdown Menu */}
+        {menuOpen && (
+          <div className="landing-mobile-menu">
+            <a href="#features" onClick={() => setMenuOpen(false)}>Features</a>
+            <a href="#workflow" onClick={() => setMenuOpen(false)}>How It Works</a>
+            <a href="#about" onClick={() => setMenuOpen(false)}>About</a>
+            <a href="/sign-in" className="mobile-sign-in" onClick={() => setMenuOpen(false)}>Sign In</a>
+            <a href="/create-account" className="landing-primary mobile-workspace-cta" onClick={() => setMenuOpen(false)}>
+              Open Workspace
+            </a>
+          </div>
+        )}
       </header>
 
       {/* Hero section: headline, description, CTAs, and workspace preview */}

@@ -23,7 +23,7 @@ function AuthShell({ mode, children }) {
     <main className="auth-page">
       {/* Top header with logo, prompt text, and navigation link */}
       <header className="auth-header">
-        <a className="auth-brand" href="/get-started">
+        <a className="auth-brand" href="/">
           <span className="brand-mark"><i className="fa-regular fa-calendar-check" aria-hidden="true" /></span>
           <span>Event<span>Flow</span></span>
         </a>

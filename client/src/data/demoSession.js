@@ -33,3 +33,9 @@ export function getDemoSession(role) {
   }
   return demoUsers[role] || demoUsers.Organizer
 }
+
+// Clear demo session from localStorage
+export function clearDemoSession() {
+  window.localStorage.removeItem(SESSION_KEY)
+}
+
