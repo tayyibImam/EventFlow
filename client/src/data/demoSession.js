@@ -33,3 +33,8 @@ export function getDemoSession(role) {
   }
   return demoUsers[role] || demoUsers.Organizer
 }
+
+// Clear the saved demo session from localStorage (used on sign-out).
+export function clearDemoSession() {
+  window.localStorage.removeItem(SESSION_KEY)
+}
