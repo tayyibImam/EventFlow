@@ -13,9 +13,9 @@ TRUNCATE TABLE users;
 SET FOREIGN_KEY_CHECKS = 1;
 
 INSERT INTO users (name, email, password_hash, role) VALUES
-('Admin User', 'admin@eventflow.com', 'hashed_placeholder', 'admin'),
-('Mirza Tafhim Osman', 'organizer@eventflow.com', 'hashed_placeholder', 'organizer'),
-('Staff One', 'staff@eventflow.com', 'hashed_placeholder', 'staff');
+('Admin User', 'admin@eventflow.com', '$2b$10$jxo1rVps.z2hE7xt2w6R..7qiXfFR.TmZzlfdXsqnM.TYNceT0mXu', 'admin'),
+('Mirza Tafhim Osman', 'organizer@eventflow.com', '$2b$10$jxo1rVps.z2hE7xt2w6R..7qiXfFR.TmZzlfdXsqnM.TYNceT0mXu', 'organizer'),
+('Staff One', 'staff@eventflow.com', '$2b$10$jxo1rVps.z2hE7xt2w6R..7qiXfFR.TmZzlfdXsqnM.TYNceT0mXu', 'staff');
 
 INSERT INTO categories (name, description) VALUES
 ('Wedding', 'Wedding ceremonies and receptions'),
