@@ -24,7 +24,7 @@ import { useEventFlow } from '../context/EventFlowContext';
 export default function AuthPlaceholder() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { login } = useEventFlow();
+  const { login, loginWithApi, registerWithApi } = useEventFlow();
 
   // Check if redirected after signout
   const [justLoggedOut, setJustLoggedOut] = useState(Boolean(location.state?.loggedOut));
@@ -66,23 +66,26 @@ export default function AuthPlaceholder() {
   // Quick Demo account fill helper
   const handleQuickFill = (roleKey) => {
     setSignInError('');
+    // These match the real accounts seeded in the database (sql/seed.sql).
+    // Guest has no real login yet — the guest portal stays demo-only for now.
     if (roleKey === 'organizer') {
-      setSignInEmail('meyadur.rahman@eventflow.io');
-      setSignInPassword('OrganizeFlow2026!');
+      setSignInEmail('organizer@eventflow.com');
+      setSignInPassword('password123');
     } else if (roleKey === 'staff') {
-      setSignInEmail('tariqul.islam@eventflow.io');
-      setSignInPassword('StaffDuty2026!');
+      setSignInEmail('staff@eventflow.com');
+      setSignInPassword('password123');
     } else if (roleKey === 'guest') {
       setSignInEmail('farhan.ahmed@investor.io');
       setSignInPassword('GuestInvite2026!');
     } else if (roleKey === 'admin') {
-      setSignInEmail('admin@eventflow.io');
-      setSignInPassword('SystemMaster2026!');
+      setSignInEmail('admin@eventflow.com');
+      setSignInPassword('password123');
     }
   };
 
-  // Sign In Handler
-  const handleSignInSubmit = (e) => {
+  // Sign In Handler — calls the real backend (bcrypt + JWT) for everyone
+  // except the guest demo account, which has no row in the users table.
+  const handleSignInSubmit = async (e) => {
     e.preventDefault();
     setSignInError('');
 
@@ -91,29 +94,39 @@ export default function AuthPlaceholder() {
       return;
     }
 
-    setSignInSuccess(true);
-    setJustLoggedOut(false);
-
-    // Route determination based on email or default to organizer dashboard
-    setTimeout(() => {
-      if (signInEmail.includes('admin')) {
-        login('admin');
-        navigate('/admin');
-      } else if (signInEmail.includes('tariqul') || signInEmail.includes('staff')) {
-        login('staff');
-        navigate('/staff');
-      } else if (signInEmail.includes('guest') || signInEmail.includes('investor')) {
+    // Guest portal is demo-only for now — the guests table has no password column.
+    if (signInEmail.includes('guest') || signInEmail.includes('investor')) {
+      setSignInSuccess(true);
+      setJustLoggedOut(false);
+      setTimeout(() => {
         login('guest');
         navigate('/guest');
-      } else {
-        login('organizer');
-        navigate('/dashboard');
-      }
-    }, 900);
+      }, 900);
+      return;
+    }
+
+    try {
+      const user = await loginWithApi(signInEmail, signInPassword);
+      setSignInSuccess(true);
+      setJustLoggedOut(false);
+
+      setTimeout(() => {
+        if (user.role === 'admin') {
+          navigate('/admin');
+        } else if (user.role === 'staff') {
+          navigate('/staff');
+        } else {
+          navigate('/dashboard');
+        }
+      }, 500);
+    } catch (err) {
+      setSignInError(err.message || 'Invalid email or password.');
+    }
   };
 
-  // Sign Up Handler
-  const handleSignUpSubmit = (e) => {
+  // Sign Up Handler — real account creation for Organizer; Staff/Guest stay
+  // demo-only for now (see the role-picker note below).
+  const handleSignUpSubmit = async (e) => {
     e.preventDefault();
     setSignUpError('');
 
@@ -138,19 +151,25 @@ export default function AuthPlaceholder() {
       return;
     }
 
-    setSignUpSuccess(true);
-    setJustLoggedOut(false);
+    if (selectedRole !== 'organizer') {
+      // Staff/Guest signup isn't wired to the backend yet — keep the old demo flow.
+      setSignUpSuccess(true);
+      setJustLoggedOut(false);
+      setTimeout(() => {
+        login(selectedRole);
+        navigate(selectedRole === 'staff' ? '/staff' : '/guest');
+      }, 1200);
+      return;
+    }
 
-    setTimeout(() => {
-      login(selectedRole);
-      if (selectedRole === 'staff') {
-        navigate('/staff');
-      } else if (selectedRole === 'guest') {
-        navigate('/guest');
-      } else {
-        navigate('/dashboard');
-      }
-    }, 1200);
+    try {
+      await registerWithApi(signUpName.trim(), signUpEmail.trim(), signUpPassword);
+      setSignUpSuccess(true);
+      setJustLoggedOut(false);
+      setTimeout(() => navigate('/dashboard'), 800);
+    } catch (err) {
+      setSignUpError(err.message || 'Could not create your account. Please try again.');
+    }
   };
 
   const handleModeSwitch = (mode) => {

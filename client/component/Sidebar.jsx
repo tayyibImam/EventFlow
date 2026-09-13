@@ -23,7 +23,7 @@ import { useEventFlow } from '../context/EventFlowContext';
 import LogoutModal from './LogoutModal';
 
 export default function Sidebar({ isOpen, onClose }) {
-  const { currentRole, currentProfile, setCurrentRole } = useEventFlow();
+  const { currentRole, currentProfile } = useEventFlow();
   const location = useLocation();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
@@ -109,25 +109,6 @@ export default function Sidebar({ isOpen, onClose }) {
               <p className="text-[11px] text-slate-300 font-medium">Event Planning &amp; Management</p>
             </div>
           </div>
-        </div>
-
-        {/* Role Quick Switcher Badge */}
-        <div className="px-5 py-3 bg-[#152e4a]/60 border-b border-white/5">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Active Role</span>
-            <span className="text-[11px] text-[#7FB3D5] font-semibold">{currentProfile.role}</span>
-          </div>
-          <select
-            id="sidebar-role-selector"
-            value={currentRole}
-            onChange={(e) => setCurrentRole(e.target.value)}
-            className="w-full bg-[#1B3A5C] text-xs text-white border border-white/20 rounded-md px-2.5 py-1.5 focus:outline-none focus:border-[#D4A537] cursor-pointer"
-          >
-            <option value="organizer">Organizer (Meyadur Rahman)</option>
-            <option value="admin">Admin (Zayd Karim)</option>
-            <option value="staff">Staff (Tariqul Islam)</option>
-            <option value="guest">Guest (Dr. Salman Chowdhury)</option>
-          </select>
         </div>
 
         {/* Navigation List */}

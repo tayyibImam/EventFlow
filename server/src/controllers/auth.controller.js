@@ -58,4 +58,45 @@ async function getMe(req, res) {
   }
 }
 
-module.exports = { login, getMe };
+
+
+// POST /api/auth/register — public signup. Always creates an 'organizer'
+// account — role is never taken from the client, only decided here.
+async function register(req, res) {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'name, email, and password are required' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+
+    const password_hash = await bcrypt.hash(password, 10);
+
+    const [result] = await pool.query(
+      "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'organizer')",
+      [name, email, password_hash]
+    );
+
+    const token = jwt.sign(
+      { user_id: result.insertId, role: 'organizer' },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.status(201).json({
+      token,
+      user: { user_id: result.insertId, name, email, role: 'organizer' }
+    });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'An account with this email already exists' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Registration failed' });
+  }
+}
+
+module.exports = { login, getMe, register };

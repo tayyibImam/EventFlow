@@ -22,8 +22,6 @@ export default function Header({ onMenuClick, title, subtitle }) {
     selectedEventId,
     setSelectedEventId,
     currentProfile,
-    currentRole,
-    setCurrentRole,
     activities
   } = useEventFlow();
 
@@ -171,37 +169,6 @@ export default function Header({ onMenuClick, title, subtitle }) {
                 <div className="inline-block mt-1 px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-semibold rounded-full">
                   Role: {currentProfile.role}
                 </div>
-              </div>
-
-              <p className="px-2 text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1.5">
-                Switch Perspective:
-              </p>
-              <div className="space-y-1">
-                {[
-                  { role: 'organizer', label: 'Organizer View', sub: 'Meyadur Rahman' },
-                  { role: 'admin', label: 'Admin View', sub: 'Zayd Karim' },
-                  { role: 'staff', label: 'Staff View', sub: 'Tariqul Islam' },
-                  { role: 'guest', label: 'Guest View', sub: 'Dr. Salman Chowdhury' }
-                ].map((item) => (
-                  <button
-                    key={item.role}
-                    type="button"
-                    onClick={() => {
-                      setCurrentRole(item.role);
-                      setShowProfileMenu(false);
-                    }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between transition-colors ${
-                      currentRole === item.role
-                        ? 'bg-[#1B3A5C] text-white font-medium'
-                        : 'text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>{item.label}</span>
-                    <span className={`text-[10px] ${currentRole === item.role ? 'text-slate-200' : 'text-slate-400'}`}>
-                      {item.sub}
-                    </span>
-                  </button>
-                ))}
               </div>
 
               {/* Sign Out Action */}

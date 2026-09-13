@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import {
   initialEvents,
   initialVenues,
@@ -12,6 +12,51 @@ import {
   initialActivities
 } from '../data/mockData';
 
+// ---- Real backend connection ----
+const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+
+function mapStatusFromApi(status) {
+  const map = { planned: 'Planned', ongoing: 'Ongoing', completed: 'Completed', cancelled: 'Cancelled' };
+  return map[status] || 'Planned';
+}
+
+function toIsoLike(dbDateTime) {
+  // MySQL returns "YYYY-MM-DD HH:MM:SS" — Chrome parses that fine with `new Date()`,
+  // but Safari/Firefox do not. Swapping the space for a "T" makes it parse everywhere.
+  return dbDateTime ? dbDateTime.replace(' ', 'T') : dbDateTime;
+}
+
+function mapEventFromApi(row) {
+  return {
+    id: row.event_id,
+    title: row.title,
+    description: row.description || '',
+    category: row.category_id != null ? String(row.category_id) : 'Uncategorized',
+    venue: row.venue_id != null ? String(row.venue_id) : 'TBD',
+    venueId: row.venue_id,
+    categoryId: row.category_id,
+    organizerId: row.organizer_id,
+    startDate: toIsoLike(row.start_datetime),
+    endDate: toIsoLike(row.end_datetime),
+    status: mapStatusFromApi(row.status),
+    budget: row.budget,
+    expectedGuests: 0,
+    organizer: 'You',
+    progress: { venue: 0, vendors: 0, guests: 0, tasks: 0, schedule: 0, overall: 0 },
+    _fromApi: true
+  };
+}
+
+function parseBudget(value) {
+  const n = Number(String(value ?? '').replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function toDateTime(dateStr, fallbackTime) {
+  if (!dateStr) return null;
+  return `${dateStr} ${fallbackTime}`;
+}
+
 const EventFlowContext = createContext(null);
 
 export function EventFlowProvider({ children }) {
@@ -22,6 +67,13 @@ export function EventFlowProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     const saved = localStorage.getItem('eventflow_authenticated');
     return saved !== 'false';
+  });
+
+  // Real backend session (set by loginWithApi)
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('eventflow_token') || null);
+  const [realUser, setRealUser] = useState(() => {
+    const saved = localStorage.getItem('eventflow_user');
+    return saved ? JSON.parse(saved) : null;
   });
 
   // Currently logged-in profile per role (all male persona as requested)
@@ -56,10 +108,24 @@ export function EventFlowProvider({ children }) {
     }
   };
 
-  const [events, setEvents] = useState(() => {
-    const saved = localStorage.getItem('eventflow_events');
-    return saved ? JSON.parse(saved) : initialEvents;
-  });
+  const [events, setEvents] = useState(initialEvents);
+  const [eventsLoading, setEventsLoading] = useState(true);
+
+  // Load real events from the database on first render
+  useEffect(() => {
+    fetch(`${API_URL}/events`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load events');
+        return res.json();
+      })
+      .then((rows) => {
+        setEvents(rows.map(mapEventFromApi));
+      })
+      .catch((err) => {
+        console.warn('Using demo events — could not reach the API:', err.message);
+      })
+      .finally(() => setEventsLoading(false));
+  }, []);
 
   const [venues, setVenues] = useState(() => {
     const saved = localStorage.getItem('eventflow_venues');
@@ -109,6 +175,14 @@ export function EventFlowProvider({ children }) {
   // Global selected event filter (for header event selector)
   const [selectedEventId, setSelectedEventId] = useState('all');
 
+  // Organizers only ever see events they created; admins keep the full view
+  const visibleEvents = useMemo(() => {
+    if (realUser && realUser.role === 'organizer') {
+      return events.filter(evt => evt.organizerId === realUser.user_id);
+    }
+    return events;
+  }, [events, realUser]);
+
   // Sync to local storage
   useEffect(() => {
     localStorage.setItem('eventflow_events', JSON.stringify(events));
@@ -143,38 +217,98 @@ export function EventFlowProvider({ children }) {
   }, [categories]);
 
   // Actions
-  const addEvent = (newEvent) => {
-    const eventObj = {
-      ...newEvent,
-      id: `evt-${Date.now()}`,
-      progress: {
-        venue: 100,
-        vendors: 40,
-        guests: 20,
-        tasks: 10,
-        schedule: 0,
-        overall: 34
-      },
-      organizer: currentProfile.organizer.name
-    };
-    setEvents(prev => [eventObj, ...prev]);
+  const addEvent = async (newEvent) => {
+    try {
+      const res = await fetch(`${API_URL}/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+        },
+        body: JSON.stringify({
+          title: newEvent.title,
+          description: newEvent.description,
+          category_id: null,
+          organizer_id: realUser?.user_id,
+          venue_id: null,
+          start_datetime: toDateTime(newEvent.startDate, '09:00:00'),
+          end_datetime: toDateTime(newEvent.endDate || newEvent.startDate, '17:00:00'),
+          status: (newEvent.status || 'planned').toLowerCase(),
+          budget: parseBudget(newEvent.budget)
+        })
+      });
 
-    // Add activity
-    addActivity({
-      title: "New event created",
-      description: `Event "${eventObj.title}" was scheduled at ${eventObj.venue}`,
-      type: "event"
-    });
+      if (!res.ok) throw new Error('Failed to create event');
+      const row = await res.json();
+      const eventObj = mapEventFromApi(row);
+      setEvents(prev => [eventObj, ...prev]);
 
-    return eventObj;
+      addActivity({
+        title: "New event created",
+        description: `Event "${eventObj.title}" was saved to the database`,
+        type: "event"
+      });
+
+      return eventObj;
+    } catch (err) {
+      console.error('addEvent: could not reach the API, saving locally only:', err);
+      const eventObj = {
+        ...newEvent,
+        id: `evt-${Date.now()}`,
+        progress: { venue: 100, vendors: 40, guests: 20, tasks: 10, schedule: 0, overall: 34 },
+        organizer: currentProfile.organizer.name
+      };
+      setEvents(prev => [eventObj, ...prev]);
+      return eventObj;
+    }
   };
 
-  const updateEvent = (id, updatedFields) => {
+  const updateEvent = async (id, updatedFields) => {
+    // Update locally right away so the UI feels instant
     setEvents(prev => prev.map(evt => evt.id === id ? { ...evt, ...updatedFields } : evt));
+
+    const current = events.find(evt => evt.id === id);
+    if (!current) return;
+
+    try {
+      const res = await fetch(`${API_URL}/events/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+        },
+        body: JSON.stringify({
+          title: updatedFields.title ?? current.title,
+          description: updatedFields.description ?? current.description,
+          category_id: current.categoryId ?? null,
+          organizer_id: current.organizerId ?? realUser?.user_id,
+          venue_id: current.venueId ?? null,
+          start_datetime: updatedFields.startDate ? toDateTime(updatedFields.startDate, '09:00:00') : current.startDate?.replace('T', ' '),
+          end_datetime: updatedFields.endDate ? toDateTime(updatedFields.endDate, '17:00:00') : current.endDate?.replace('T', ' '),
+          status: (updatedFields.status ?? current.status ?? 'planned').toLowerCase(),
+          budget: updatedFields.budget != null ? parseBudget(updatedFields.budget) : current.budget
+        })
+      });
+
+      if (!res.ok) throw new Error('Failed to update event');
+      const row = await res.json();
+      setEvents(prev => prev.map(evt => evt.id === id ? mapEventFromApi(row) : evt));
+    } catch (err) {
+      console.error('updateEvent: could not reach the API, kept local change only:', err);
+    }
   };
 
-  const deleteEvent = (id) => {
+  const deleteEvent = async (id) => {
     setEvents(prev => prev.filter(evt => evt.id !== id));
+    try {
+      const res = await fetch(`${API_URL}/events/${id}`, {
+        method: 'DELETE',
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {}
+      });
+      if (!res.ok && res.status !== 204) throw new Error('Failed to delete event');
+    } catch (err) {
+      console.error('deleteEvent: could not reach the API, removed locally only:', err);
+    }
   };
 
   const addGuest = (newGuest) => {
@@ -342,12 +476,48 @@ export function EventFlowProvider({ children }) {
 
   const logout = () => {
     setIsAuthenticated(false);
+    setAuthToken(null);
+    setRealUser(null);
     localStorage.setItem('eventflow_authenticated', 'false');
+    localStorage.removeItem('eventflow_token');
+    localStorage.removeItem('eventflow_user');
     addActivity({
       title: `Session Signed Out`,
       description: `Active session terminated for ${currentProfile[currentRole]?.name || 'User'}`,
       type: 'system'
     });
+  };
+
+  // Real login against the backend (email + password, checked with bcrypt, returns a JWT)
+  const loginWithApi = async (email, password) => {
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Invalid email or password');
+    }
+
+    setAuthToken(data.token);
+    setRealUser(data.user);
+    localStorage.setItem('eventflow_token', data.token);
+    localStorage.setItem('eventflow_user', JSON.stringify(data.user));
+
+    const mappedRole = data.user.role === 'admin' ? 'admin' : data.user.role === 'staff' ? 'staff' : 'organizer';
+    setCurrentRole(mappedRole);
+    setIsAuthenticated(true);
+    localStorage.setItem('eventflow_authenticated', 'true');
+
+    addActivity({
+      title: `User Signed In`,
+      description: `Authenticated as ${data.user.name} (${data.user.role})`,
+      type: 'system'
+    });
+
+    return data.user;
   };
 
   const login = (role) => {
@@ -363,17 +533,61 @@ export function EventFlowProvider({ children }) {
     });
   };
 
+  // Real sign-up against the backend. Always creates an 'organizer' account —
+  // Staff and Admin accounts are provisioned separately, not via public sign-up.
+  const registerWithApi = async (name, email, password) => {
+    const res = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Could not create your account');
+    }
+
+    setAuthToken(data.token);
+    setRealUser(data.user);
+    localStorage.setItem('eventflow_token', data.token);
+    localStorage.setItem('eventflow_user', JSON.stringify(data.user));
+    setCurrentRole('organizer');
+    setIsAuthenticated(true);
+    localStorage.setItem('eventflow_authenticated', 'true');
+
+    addActivity({
+      title: 'Account created',
+      description: `${data.user.name} registered as an organizer`,
+      type: 'system'
+    });
+
+    return data.user;
+  };
+
   return (
     <EventFlowContext.Provider
       value={{
         isAuthenticated,
         login,
+        loginWithApi,
+        registerWithApi,
         logout,
+        authToken,
+        realUser,
         currentRole,
         setCurrentRole,
-        currentProfile: currentProfile[currentRole] || currentProfile.organizer,
+        currentProfile: realUser
+          ? {
+              name: realUser.name,
+              title: realUser.role === 'admin' ? 'Platform Administrator' : realUser.role === 'staff' ? 'Operations Staff' : 'Event Organizer',
+              role: realUser.role.charAt(0).toUpperCase() + realUser.role.slice(1),
+              email: realUser.email,
+              avatar: realUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+            }
+          : (currentProfile[currentRole] || currentProfile.organizer),
         allProfiles: currentProfile,
-        events,
+        eventsLoading,
+        events: visibleEvents,
         venues,
         vendors,
         guests,

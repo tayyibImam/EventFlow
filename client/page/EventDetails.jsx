@@ -55,7 +55,7 @@ export default function EventDetails() {
   } = useEventFlow();
 
   // Find targeted event or fallback to the first one
-  const event = events.find(e => e.id === id) || events[0];
+  const event = events.find(e => String(e.id) === String(id)) || events[0];
 
   const [activeTab, setActiveTab] = useState('Overview');
 

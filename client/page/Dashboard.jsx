@@ -21,7 +21,7 @@ import EventCard from '../component/EventCard';
 import Button from '../component/Button';
 
 export default function Dashboard() {
-  const { events, tasks, guests, activities } = useEventFlow();
+  const { events, tasks, guests, activities, currentProfile } = useEventFlow();
 
   // Calculate realistic summary values
   const totalEventsCount = 12; // Platform overall benchmark requested
@@ -51,10 +51,11 @@ export default function Dashboard() {
               <span>Event Operations Control</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Welcome back, Meyadur Rahman
+              Welcome back, {currentProfile.name}
             </h2>
             <p className="mt-2 text-sm text-slate-200 leading-relaxed">
-              Track multi-track schedules, vendors, guest rosters, and tasks across <strong>Tech Conference 2026</strong> and upcoming summits from one central unified dashboard.
+              Track multi-track schedules, vendors, guest rosters, and tasks
+              {flagshipEvent ? <> across <strong>{flagshipEvent.title}</strong> and upcoming summits</> : ''} from one central unified dashboard.
             </p>
           </div>
 
@@ -155,62 +156,71 @@ export default function Dashboard() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {upcomingEvents.slice(0, 4).map((evt) => (
-              <EventCard key={evt.id} event={evt} />
-            ))}
-          </div>
+          {upcomingEvents.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+              <p className="text-sm font-semibold text-slate-600">No upcoming events yet</p>
+              <p className="text-xs text-slate-400 mt-1">Events you create will show up here.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {upcomingEvents.slice(0, 4).map((evt) => (
+                <EventCard key={evt.id} event={evt} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Right 1 Col: Planning Progress & Recent Activity */}
         <div className="space-y-6">
           {/* Planning Progress Card */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div>
-                <h3 className="text-base font-bold text-[#1B3A5C]">
-                  Planning Progress
-                </h3>
-                <p className="text-xs text-slate-500 truncate max-w-[200px]">
-                  Focus: {flagshipEvent.title}
-                </p>
-              </div>
-              <span className="text-xs font-bold text-[#D4A537] bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-                {flagshipEvent.progress?.overall || 74}% Ready
-              </span>
-            </div>
-
-            <div className="mt-5 space-y-4">
-              {planningMilestones.map((mile) => (
-                <div key={mile.label} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-700">
-                      {mile.label}
-                    </span>
-                    <span className={`font-bold ${mile.textColor}`}>
-                      {mile.status}
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                    <div
-                      className={`h-2 rounded-full ${mile.color}`}
-                      style={{ width: `${mile.percent}%` }}
-                    />
-                  </div>
+          {flagshipEvent && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div>
+                  <h3 className="text-base font-bold text-[#1B3A5C]">
+                    Planning Progress
+                  </h3>
+                  <p className="text-xs text-slate-500 truncate max-w-[200px]">
+                    Focus: {flagshipEvent.title}
+                  </p>
                 </div>
-              ))}
-            </div>
+                <span className="text-xs font-bold text-[#D4A537] bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                  {flagshipEvent.progress?.overall || 74}% Ready
+                </span>
+              </div>
 
-            <div className="mt-6 pt-4 border-t border-slate-100">
-              <Link
-                to={`/events/${flagshipEvent.id}`}
-                className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-[#1B3A5C] bg-slate-50 hover:bg-slate-100 py-2.5 rounded-lg transition-colors border border-slate-200"
-              >
-                <span>Open {flagshipEvent.title} Workspace</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
+              <div className="mt-5 space-y-4">
+                {planningMilestones.map((mile) => (
+                  <div key={mile.label} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-700">
+                        {mile.label}
+                      </span>
+                      <span className={`font-bold ${mile.textColor}`}>
+                        {mile.status}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-2 rounded-full ${mile.color}`}
+                        style={{ width: `${mile.percent}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-slate-100">
+                <Link
+                  to={`/events/${flagshipEvent.id}`}
+                  className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-[#1B3A5C] bg-slate-50 hover:bg-slate-100 py-2.5 rounded-lg transition-colors border border-slate-200"
+                >
+                  <span>Open {flagshipEvent.title} Workspace</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Recent Activity Card */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
