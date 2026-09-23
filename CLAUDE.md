@@ -10,9 +10,13 @@ The root/client READMEs describe a finished MySQL app with full JWT auth. The ac
 - `client/context/EventFlowContext.jsx` is the seam between the two: it fetches `GET /api/events` on mount and falls back to `initialEvents` mock data if the request fails (e.g. no backend running); `addEvent`/`updateEvent`/`deleteEvent` try the API first and fall back to a local-only mutation on failure. Every other domain (`venues`, `vendors`, `guests`, `tasks`, `schedule`, `feedback`, `categories`, `activities`) is pure `useState` + `localStorage`, no network calls at all.
 - No automated tests, lint, or typecheck config beyond `tsc --noEmit` in the client. `npm test` in `server/` is an unimplemented stub.
 
-## Two independent packages — no root tooling
+## Two independent packages — root `package.json` is just a dev convenience
 
-There is no root `package.json`/workspace. `cd` into `client/` or `server/` separately to install and run.
+`client/` and `server/` remain independent packages with their own dependencies/lockfiles — still `cd` into each separately for `npm install`. The root `package.json` is not a workspace; it only exists to run both dev servers together via `concurrently`:
+
+- `npm install` (repo root, once) → installs `concurrently`
+- `npm run dev` (repo root) → runs `client`'s and `server`'s `npm run dev` in parallel (prefixed `client`/`server` output)
+- `npm run install:all` (repo root) → convenience for `npm install --prefix client && npm install --prefix server`
 
 - **Client**: `cd client && npm install && npm run dev` → Vite on port 3000 (README says 5173 — the actual script pins `--port=3000`).
   - `npm run build` — production build
