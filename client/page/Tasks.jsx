@@ -10,7 +10,7 @@ import FormInput from '../component/FormInput';
 import DashboardCard from '../component/DashboardCard';
 
 export default function Tasks() {
-  const { tasks, events, addTask, updateTaskStatus, deleteTask } = useEventFlow();
+  const { tasks, events, staffDirectory, addTask, updateTask, updateTaskStatus, deleteTask } = useEventFlow();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('All');
@@ -23,14 +23,14 @@ export default function Tasks() {
   const [form, setForm] = useState({
     title: '',
     description: '',
-    eventId: 'evt-101',
-    assignedTo: 'Tariqul Islam',
+    eventId: '',
+    assignedToId: '',
     dueDate: '2026-10-12',
     priority: 'High',
     status: 'Pending'
   });
 
-  const staffOptions = ['All', 'Tariqul Islam', 'Farhan Ahmed', 'Tanvir Hasan', 'Meyadur Rahman'];
+  const staffOptions = ['All', ...staffDirectory.map(s => s.name)];
   const statusOptions = ['All', 'Pending', 'In Progress', 'Done'];
   const priorityOptions = ['All', 'High', 'Medium', 'Low'];
 
@@ -56,8 +56,8 @@ export default function Tasks() {
     setForm({
       title: '',
       description: '',
-      eventId: events[0]?.id || 'evt-101',
-      assignedTo: 'Tariqul Islam',
+      eventId: events[0]?.id || '',
+      assignedToId: staffDirectory[0]?.id || '',
       dueDate: '2026-10-12',
       priority: 'High',
       status: 'Pending'
@@ -70,8 +70,8 @@ export default function Tasks() {
     setForm({
       title: task.title,
       description: task.description || '',
-      eventId: task.eventId || events[0]?.id || 'evt-101',
-      assignedTo: task.assignedTo,
+      eventId: task.eventId ?? events[0]?.id ?? '',
+      assignedToId: task.assignedToId ?? '',
       dueDate: task.dueDate,
       priority: task.priority,
       status: task.status
@@ -83,16 +83,16 @@ export default function Tasks() {
     e.preventDefault();
     if (!form.title) return;
 
-    const ev = events.find(e => e.id === form.eventId);
+    // Real event ids are numbers, but a <select>'s onChange always yields a
+    // string — compare as strings so this keeps matching either way.
+    const ev = events.find(e => String(e.id) === String(form.eventId));
 
     if (editingTask) {
-      updateTaskStatus(editingTask.id, form.status);
-      // Update full details
-      setTasksFromContext(editingTask.id, form);
+      updateTask(editingTask.id, form);
     } else {
       addTask({
         ...form,
-        eventTitle: ev ? ev.title : 'Tech Conference 2026'
+        eventTitle: ev ? ev.title : undefined
       });
     }
 
@@ -262,9 +262,13 @@ export default function Tasks() {
             <FormInput
               label="Assigned Staff Member"
               type="select"
-              value={form.assignedTo}
-              onChange={(e) => setForm({ ...form, assignedTo: e.target.value })}
-              options={["Tariqul Islam", "Farhan Ahmed", "Tanvir Hasan", "Meyadur Rahman"]}
+              value={form.assignedToId}
+              onChange={(e) => setForm({ ...form, assignedToId: e.target.value })}
+              options={[
+                { value: '', label: 'Unassigned' },
+                ...staffDirectory.map(s => ({ value: s.id, label: s.name }))
+              ]}
+              helperText={staffDirectory.length === 0 ? 'No staff accounts found yet.' : undefined}
             />
 
             <FormInput

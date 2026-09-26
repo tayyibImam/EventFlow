@@ -4,6 +4,21 @@ const pool = require('../config/db');
 // password_hash must never be sent back in an API response.
 const SAFE_COLUMNS = 'user_id, name, email, phone, role, created_at';
 
+// GET /api/users/staff-directory — any authenticated user (not just admin),
+// since an organizer needs this to assign a task to a real staff account.
+// Deliberately narrow: just enough to populate a picker, nothing else.
+async function getStaffDirectory(req, res) {
+  try {
+    const [rows] = await pool.query(
+      "SELECT user_id, name, email FROM users WHERE role = 'staff' ORDER BY name"
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch staff directory' });
+  }
+}
+
 async function getAllUsers(req, res) {
   try {
     const [rows] = await pool.query(`SELECT ${SAFE_COLUMNS} FROM users`);
@@ -86,4 +101,4 @@ async function deleteUser(req, res) {
   }
 }
 
-module.exports = { getAllUsers, getUserById, updateUser, deleteUser };
+module.exports = { getStaffDirectory, getAllUsers, getUserById, updateUser, deleteUser };

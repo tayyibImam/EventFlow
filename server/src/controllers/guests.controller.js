@@ -28,15 +28,15 @@ async function getGuestById(req, res) {
 
 async function createGuest(req, res) {
   try {
-    const { name, email, phone } = req.body;
+    const { name, email, phone, description } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'name is required' });
     }
 
     const [result] = await pool.query(
-      'INSERT INTO guests (name, email, phone) VALUES (?, ?, ?)',
-      [name, email || null, phone || null]
+      'INSERT INTO guests (name, email, phone, description) VALUES (?, ?, ?, ?)',
+      [name, email || null, phone || null, description || null]
     );
 
     const [newGuest] = await pool.query('SELECT * FROM guests WHERE guest_id = ?', [result.insertId]);
@@ -50,7 +50,7 @@ async function createGuest(req, res) {
 async function updateGuest(req, res) {
   try {
     const { id } = req.params;
-    const { name, email, phone } = req.body;
+    const { name, email, phone, description } = req.body;
 
     const [existing] = await pool.query('SELECT * FROM guests WHERE guest_id = ?', [id]);
     if (existing.length === 0) {
@@ -58,8 +58,8 @@ async function updateGuest(req, res) {
     }
 
     await pool.query(
-      'UPDATE guests SET name = ?, email = ?, phone = ? WHERE guest_id = ?',
-      [name, email, phone, id]
+      'UPDATE guests SET name = ?, email = ?, phone = ?, description = ? WHERE guest_id = ?',
+      [name, email, phone, description, id]
     );
 
     const [updated] = await pool.query('SELECT * FROM guests WHERE guest_id = ?', [id]);

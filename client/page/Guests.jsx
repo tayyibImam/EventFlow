@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, UserCheck, UserX, Clock, Plus, Search, Mail, Send } from 'lucide-react';
+import { Users, UserCheck, UserX, Clock, Plus, Search, Mail, Send, Link2, Check } from 'lucide-react';
 import { useEventFlow } from '../context/EventFlowContext';
 import GuestTable from '../component/GuestTable';
 import SearchBar from '../component/SearchBar';
@@ -16,15 +16,18 @@ export default function Guests() {
   const [selectedRSVP, setSelectedRSVP] = useState('All');
   const [selectedEventFilter, setSelectedEventFilter] = useState('All');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [inviteLinkResult, setInviteLinkResult] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Form State
   const [form, setForm] = useState({
     name: '',
     email: '',
     phone: '',
+    description: '',
     organization: '',
     role: 'Delegate',
-    eventId: 'evt-101',
+    eventId: events[0]?.id || '',
     invitationStatus: 'Sent',
     rsvpStatus: 'Accepted'
   });
@@ -41,7 +44,9 @@ export default function Guests() {
       (g.organization && g.organization.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesRSVP = selectedRSVP === 'All' || g.rsvpStatus === selectedRSVP;
-    const matchesEvent = selectedEventFilter === 'All' || g.eventId === selectedEventFilter;
+    // Real event ids are numbers, but a <select>'s onChange always yields a
+    // string — compare as strings so this keeps matching either way.
+    const matchesEvent = selectedEventFilter === 'All' || String(g.eventId) === String(selectedEventFilter);
 
     return matchesSearch && matchesRSVP && matchesEvent;
   });
@@ -52,18 +57,23 @@ export default function Guests() {
   const declinedGuests = guests.filter(g => g.rsvpStatus === 'Declined').length;
   const noResponseGuests = guests.filter(g => g.rsvpStatus === 'No Response' || g.rsvpStatus === 'Invited').length;
 
-  const handleAddSubmit = (e) => {
+  const handleAddSubmit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.email) return;
 
-    addGuest(form);
+    const created = await addGuest(form);
+    if (created?.rsvpLink) {
+      setLinkCopied(false);
+      setInviteLinkResult(created);
+    }
     setForm({
       name: '',
       email: '',
       phone: '',
+      description: '',
       organization: '',
       role: 'Delegate',
-      eventId: 'evt-101',
+      eventId: events[0]?.id || '',
       invitationStatus: 'Sent',
       rsvpStatus: 'Accepted'
     });
@@ -221,6 +231,14 @@ export default function Guests() {
             />
           </div>
 
+          <FormInput
+            label="Description"
+            type="textarea"
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder="Dietary requirements, accessibility notes, VIP handling instructions..."
+          />
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 tracking-wide mb-1.5">
               Associated Event:
@@ -272,6 +290,52 @@ export default function Guests() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Invite Link — shown alongside the emailed invite as a manual fallback */}
+      <Modal
+        isOpen={!!inviteLinkResult}
+        onClose={() => setInviteLinkResult(null)}
+        title="Guest Added"
+        subtitle={inviteLinkResult?.emailSent ? 'Invitation emailed to the guest' : 'Could not send the invite email automatically'}
+      >
+        {inviteLinkResult && (
+          <div className="space-y-4">
+            {inviteLinkResult.emailSent ? (
+              <p className="text-sm text-slate-600">
+                An invitation email was sent to <strong className="text-slate-900">{inviteLinkResult.email}</strong>. You can also share this link directly:
+              </p>
+            ) : (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-semibold">
+                Could not email <strong>{inviteLinkResult.name}</strong> automatically — share this link with them directly instead.
+              </div>
+            )}
+            <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+              <Link2 className="w-4 h-4 text-slate-400 shrink-0" />
+              <span className="text-xs text-slate-700 truncate flex-1">{inviteLinkResult.rsvpLink}</span>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button variant="outline" size="sm" onClick={() => setInviteLinkResult(null)}>
+                Close
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={linkCopied ? Check : Link2}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(inviteLinkResult.rsvpLink);
+                    setLinkCopied(true);
+                  } catch (err) {
+                    console.error('Could not copy invite link:', err);
+                  }
+                }}
+              >
+                {linkCopied ? 'Copied' : 'Copy Link'}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

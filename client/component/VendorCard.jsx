@@ -1,9 +1,13 @@
 import React from 'react';
-import { Star, Phone, Tag, DollarSign, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { Star, Phone, Tag, DollarSign, CheckCircle2, Clock, AlertCircle, Briefcase, X } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import Button from './Button';
 
-export default function VendorCard({ vendor, onStatusChange }) {
+// Two modes: pass `onHire` for the vendor directory (browsing, not tied to
+// any event — booking a vendor only makes sense once you pick a target
+// event). Pass `onStatusChange` (optionally with `onRemove`) for an
+// event-scoped list where the vendor is already hired for that one event.
+export default function VendorCard({ vendor, onStatusChange, onHire, onRemove }) {
   const {
     id,
     name,
@@ -12,6 +16,7 @@ export default function VendorCard({ vendor, onStatusChange }) {
     availability,
     rating,
     agreedPrice,
+    priceLabel = '(Plan Ref)',
     bookingStatus,
     specialty
   } = vendor;
@@ -71,32 +76,57 @@ export default function VendorCard({ vendor, onStatusChange }) {
       <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
         <div>
           <span className="text-[11px] uppercase tracking-wider text-slate-400 font-medium block">
-            Agreed Price
+            {onHire ? 'Base Price' : 'Agreed Price'}
           </span>
           <span className="text-sm font-bold text-[#1B3A5C]">
-            {agreedPrice} <span className="text-[10px] text-slate-400 font-normal">(Plan Ref)</span>
+            {agreedPrice} <span className="text-[10px] text-slate-400 font-normal">{priceLabel}</span>
           </span>
         </div>
 
         <div className="flex items-center gap-1.5">
-          {bookingStatus !== 'Confirmed' ? (
+          {onHire ? (
             <Button
-              id={`btn-confirm-vendor-${id}`}
+              id={`btn-hire-vendor-${id}`}
               size="sm"
-              variant="outline"
-              onClick={() => onStatusChange && onStatusChange(id, 'Confirmed')}
+              variant="primary"
+              icon={Briefcase}
+              onClick={() => onHire(vendor)}
             >
-              Confirm
+              Hire for Event
             </Button>
           ) : (
-            <Button
-              id={`btn-pending-vendor-${id}`}
-              size="sm"
-              variant="ghost"
-              onClick={() => onStatusChange && onStatusChange(id, 'Pending')}
-            >
-              Mark Pending
-            </Button>
+            <>
+              {bookingStatus !== 'Confirmed' ? (
+                <Button
+                  id={`btn-confirm-vendor-${id}`}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onStatusChange && onStatusChange(id, 'Confirmed')}
+                >
+                  Confirm
+                </Button>
+              ) : (
+                <Button
+                  id={`btn-pending-vendor-${id}`}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onStatusChange && onStatusChange(id, 'Pending')}
+                >
+                  Mark Pending
+                </Button>
+              )}
+              {onRemove && (
+                <button
+                  type="button"
+                  onClick={() => onRemove(id)}
+                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                  title="Remove from this event"
+                  aria-label="Remove vendor from this event"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Mail, Phone, CheckCircle, XCircle, Clock, Send, MoreVertical } from 'lucide-react';
+import React, { useState } from 'react';
+import { Mail, Phone, CheckCircle, XCircle, Clock, Send, MoreVertical, Link2, Check } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 
 export default function GuestTable({
@@ -7,6 +7,18 @@ export default function GuestTable({
   onRSVPChange,
   id = "guest-management-table"
 }) {
+  const [copiedId, setCopiedId] = useState(null);
+
+  const handleCopyLink = async (gId, link) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedId(gId);
+      setTimeout(() => setCopiedId((prev) => (prev === gId ? null : prev)), 2000);
+    } catch (err) {
+      console.error('Could not copy invite link:', err);
+    }
+  };
+
   return (
     <div id={id} className="w-full bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
       <div className="overflow-x-auto">
@@ -18,13 +30,14 @@ export default function GuestTable({
               <th className="py-3.5 px-4">Phone</th>
               <th className="py-3.5 px-4">Invitation</th>
               <th className="py-3.5 px-4">RSVP Status</th>
+              <th className="py-3.5 px-4">Invite Link</th>
               <th className="py-3.5 px-4 text-right">Quick Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-slate-700">
             {guests.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-slate-400">
+                <td colSpan={7} className="py-8 text-center text-slate-400">
                   No guest records found matching criteria.
                 </td>
               </tr>
@@ -35,10 +48,12 @@ export default function GuestTable({
                   name,
                   email,
                   phone,
+                  description,
                   invitationStatus,
                   rsvpStatus,
                   organization,
-                  role
+                  role,
+                  rsvpLink
                 } = guest;
 
                 return (
@@ -58,6 +73,11 @@ export default function GuestTable({
                           <p className="text-xs text-slate-400 font-normal">
                             {role ? `${role} • ` : ''}{organization || 'Individual Delegate'}
                           </p>
+                          {description && (
+                            <p className="text-[11px] text-slate-400 font-normal mt-0.5 max-w-[220px] truncate" title={description}>
+                              {description}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -89,6 +109,32 @@ export default function GuestTable({
                     {/* RSVP */}
                     <td className="py-3.5 px-4">
                       <StatusBadge status={rsvpStatus} size="sm" />
+                    </td>
+
+                    {/* Invite Link — stands in for a real emailed invite for now */}
+                    <td className="py-3.5 px-4">
+                      {rsvpLink ? (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyLink(gId, rsvpLink)}
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1B3A5C] hover:text-[#D4A537] bg-slate-50 hover:bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                          title={rsvpLink}
+                        >
+                          {copiedId === gId ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              Copied
+                            </>
+                          ) : (
+                            <>
+                              <Link2 className="w-3.5 h-3.5" />
+                              Copy Link
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-400">Not available</span>
+                      )}
                     </td>
 
                     {/* Action Selector */}

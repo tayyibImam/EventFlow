@@ -19,7 +19,9 @@ import {
   Layers,
   ChevronRight,
   Send,
-  Star
+  Star,
+  Link2,
+  Check
 } from 'lucide-react';
 import { useEventFlow } from '../context/EventFlowContext';
 import StatusBadge from '../component/StatusBadge';
@@ -43,6 +45,8 @@ export default function EventDetails() {
     tasks,
     schedule,
     feedback,
+    eventVendorBookings,
+    staffDirectory,
     addGuest,
     updateGuestRSVP,
     addTask,
@@ -50,8 +54,11 @@ export default function EventDetails() {
     deleteTask,
     addScheduleItem,
     deleteScheduleItem,
-    updateVendorBooking,
-    assignVenueToEvent
+    hireVendorForEvent,
+    updateVendorEventBooking,
+    removeVendorFromEvent,
+    assignVenueToEvent,
+    getEventProgress
   } = useEventFlow();
 
   // Find targeted event or fallback to the first one
@@ -64,12 +71,19 @@ export default function EventDetails() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isVenueModalOpen, setIsVenueModalOpen] = useState(false);
+  const [isHireVendorModalOpen, setIsHireVendorModalOpen] = useState(false);
+  const [hireVendorForm, setHireVendorForm] = useState({ vendorId: '', agreedPrice: '', status: 'Pending' });
+  const [hireVendorError, setHireVendorError] = useState('');
+  const [hiringVendor, setHiringVendor] = useState(false);
+  const [inviteLinkResult, setInviteLinkResult] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Forms state
   const [guestForm, setGuestForm] = useState({
     name: '',
     email: '',
     phone: '',
+    description: '',
     organization: '',
     role: 'Delegate',
     invitationStatus: 'Sent',
@@ -79,7 +93,7 @@ export default function EventDetails() {
   const [taskForm, setTaskForm] = useState({
     title: '',
     description: '',
-    assignedTo: 'Tariqul Islam',
+    assignedToId: '',
     dueDate: '',
     priority: 'High',
     status: 'Pending'
@@ -109,8 +123,24 @@ export default function EventDetails() {
   const eventTasks = tasks.filter(t => !t.eventId || t.eventId === event.id);
   const eventSchedule = schedule.filter(s => !s.eventId || s.eventId === event.id);
   const eventFeedback = feedback.filter(f => !f.eventId || f.eventId === event.id);
-  const eventVendors = vendors; // Connected ecosystem
+
+  // Only vendors actually hired (event_vendors) for this specific event —
+  // joined against the directory for name/contact/category.
+  const eventBookings = eventVendorBookings.filter(b => b.eventId === event.id);
+  const eventVendors = eventBookings.map(b => {
+    const vendor = vendors.find(v => v.id === b.vendorId) || {};
+    return {
+      ...vendor,
+      id: b.vendorId,
+      agreedPrice: `$${Number(b.agreedPrice).toLocaleString()}`,
+      priceLabel: '(Agreed)',
+      bookingStatus: b.status
+    };
+  });
+  const hireableVendors = vendors.filter(v => !eventBookings.some(b => b.vendorId === v.id));
+
   const currentVenue = venues.find(v => v.id === event.venueId || v.name === event.venue) || venues[0];
+  const progress = getEventProgress(event.id);
 
   // Guest stats
   const totalGuests = eventGuests.length;
@@ -134,17 +164,22 @@ export default function EventDetails() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const handleAddGuestSubmit = (e) => {
+  const handleAddGuestSubmit = async (e) => {
     e.preventDefault();
     if (!guestForm.name || !guestForm.email) return;
-    addGuest({
+    const created = await addGuest({
       ...guestForm,
       eventId: event.id
     });
+    if (created?.rsvpLink) {
+      setLinkCopied(false);
+      setInviteLinkResult(created);
+    }
     setGuestForm({
       name: '',
       email: '',
       phone: '',
+      description: '',
       organization: '',
       role: 'Delegate',
       invitationStatus: 'Sent',
@@ -164,7 +199,7 @@ export default function EventDetails() {
     setTaskForm({
       title: '',
       description: '',
-      assignedTo: 'Tariqul Islam',
+      assignedToId: '',
       dueDate: '',
       priority: 'High',
       status: 'Pending'
@@ -187,6 +222,32 @@ export default function EventDetails() {
       notes: ''
     });
     setIsScheduleModalOpen(false);
+  };
+
+  const openHireVendorModal = () => {
+    setHireVendorForm({ vendorId: hireableVendors[0]?.id || '', agreedPrice: '', status: 'Pending' });
+    setHireVendorError('');
+    setIsHireVendorModalOpen(true);
+  };
+
+  const handleHireVendorSubmit = async (e) => {
+    e.preventDefault();
+    setHireVendorError('');
+
+    if (!hireVendorForm.vendorId) {
+      setHireVendorError('Select a vendor to hire.');
+      return;
+    }
+
+    setHiringVendor(true);
+    try {
+      await hireVendorForEvent(event.id, Number(hireVendorForm.vendorId), hireVendorForm.agreedPrice, hireVendorForm.status);
+      setIsHireVendorModalOpen(false);
+    } catch (err) {
+      setHireVendorError(err.message || 'Could not hire this vendor. Please try again.');
+    } finally {
+      setHiringVendor(false);
+    }
   };
 
   return (
@@ -249,12 +310,12 @@ export default function EventDetails() {
               Planning Readiness
             </span>
             <div className="text-3xl font-black text-[#1B3A5C] mt-1">
-              {event.progress?.overall || 74}%
+              {progress.overall}%
             </div>
             <div className="w-32 bg-slate-200 rounded-full h-2 mt-2 overflow-hidden">
               <div
                 className="bg-[#D4A537] h-2 rounded-full"
-                style={{ width: `${event.progress?.overall || 74}%` }}
+                style={{ width: `${progress.overall}%` }}
               />
             </div>
             <span className="text-[10px] text-slate-400 mt-2">
@@ -327,11 +388,11 @@ export default function EventDetails() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               {[
-                { name: "Venue", val: event.progress?.venue || 100, label: "Completed", icon: Building },
-                { name: "Vendors", val: event.progress?.vendors || 100, label: "Completed", icon: Store },
-                { name: "Guests", val: event.progress?.guests || 72, label: "72% Confirmed", icon: Users },
-                { name: "Tasks", val: event.progress?.tasks || 60, label: "60% Done", icon: CheckSquare },
-                { name: "Schedule", val: event.progress?.schedule || 40, label: "40% Published", icon: Clock }
+                { name: "Venue", val: progress.venue, label: progress.venue === 100 ? "Assigned" : "Not assigned", icon: Building },
+                { name: "Vendors", val: progress.vendors, label: `${progress.vendors}% Confirmed`, icon: Store },
+                { name: "Guests", val: progress.guests, label: `${progress.guests}% Confirmed`, icon: Users },
+                { name: "Tasks", val: progress.tasks, label: `${progress.tasks}% Done`, icon: CheckSquare },
+                { name: "Schedule", val: progress.schedule, label: progress.schedule === 100 ? "Published" : "Not published", icon: Clock }
               ].map((item) => {
                 const Icon = item.icon;
                 return (
@@ -499,17 +560,35 @@ export default function EventDetails() {
                 Catering, Decoration, Photography, Videography, Sound &amp; Lighting, and Security
               </p>
             </div>
+            <Button
+              id="btn-hire-vendor-modal"
+              size="sm"
+              variant="primary"
+              icon={Plus}
+              onClick={openHireVendorModal}
+              disabled={hireableVendors.length === 0}
+            >
+              Hire Vendor
+            </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {eventVendors.map((vnd) => (
-              <VendorCard
-                key={vnd.id}
-                vendor={vnd}
-                onStatusChange={updateVendorBooking}
-              />
-            ))}
-          </div>
+          {eventVendors.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+              <p className="text-sm font-semibold text-slate-600">No vendors hired yet</p>
+              <p className="text-xs text-slate-400 mt-1">Hire a vendor from the directory for this event.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {eventVendors.map((vnd) => (
+                <VendorCard
+                  key={vnd.id}
+                  vendor={vnd}
+                  onStatusChange={(vendorId, status) => updateVendorEventBooking(event.id, vendorId, status)}
+                  onRemove={(vendorId) => removeVendorFromEvent(event.id, vendorId)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -689,6 +768,13 @@ export default function EventDetails() {
               placeholder="e.g. Panelist, Delegate"
             />
           </div>
+          <FormInput
+            label="Description"
+            type="textarea"
+            value={guestForm.description}
+            onChange={(e) => setGuestForm({ ...guestForm, description: e.target.value })}
+            placeholder="Dietary requirements, accessibility notes, VIP handling instructions..."
+          />
           <div className="grid grid-cols-2 gap-3">
             <FormInput
               label="RSVP Status"
@@ -742,9 +828,12 @@ export default function EventDetails() {
             <FormInput
               label="Assigned Staff"
               type="select"
-              value={taskForm.assignedTo}
-              onChange={(e) => setTaskForm({ ...taskForm, assignedTo: e.target.value })}
-              options={["Tariqul Islam", "Farhan Ahmed", "Tanvir Hasan", "Meyadur Rahman"]}
+              value={taskForm.assignedToId}
+              onChange={(e) => setTaskForm({ ...taskForm, assignedToId: e.target.value })}
+              options={[
+                { value: '', label: 'Unassigned' },
+                ...staffDirectory.map(s => ({ value: s.id, label: s.name }))
+              ]}
             />
             <FormInput
               label="Due Date"
@@ -866,6 +955,117 @@ export default function EventDetails() {
             </div>
           ))}
         </div>
+      </Modal>
+
+      {/* Modal: Hire Vendor */}
+      <Modal
+        isOpen={isHireVendorModalOpen}
+        onClose={() => setIsHireVendorModalOpen(false)}
+        title="Hire Vendor"
+        subtitle={`Book a vendor from the directory for ${event.title}`}
+      >
+        <form onSubmit={handleHireVendorSubmit} className="space-y-4">
+          {hireVendorError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-semibold">
+              {hireVendorError}
+            </div>
+          )}
+
+          {hireableVendors.length === 0 ? (
+            <p className="text-xs text-slate-500">Every vendor in the directory is already hired for this event.</p>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 tracking-wide mb-1.5">
+                  Vendor:
+                </label>
+                <select
+                  value={hireVendorForm.vendorId}
+                  onChange={(e) => setHireVendorForm({ ...hireVendorForm, vendorId: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-[#1B3A5C] focus:outline-none"
+                >
+                  {hireableVendors.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name} ({v.category})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <FormInput
+                label="Agreed Price (USD)"
+                type="number"
+                value={hireVendorForm.agreedPrice}
+                onChange={(e) => setHireVendorForm({ ...hireVendorForm, agreedPrice: e.target.value })}
+                placeholder="e.g. 12500"
+                required
+              />
+
+              <FormInput
+                label="Initial Status"
+                type="select"
+                value={hireVendorForm.status}
+                onChange={(e) => setHireVendorForm({ ...hireVendorForm, status: e.target.value })}
+                options={['Pending', 'Confirmed']}
+              />
+            </>
+          )}
+
+          <div className="pt-3 flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setIsHireVendorModalOpen(false)} disabled={hiringVendor}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" disabled={hiringVendor || hireableVendors.length === 0}>
+              {hiringVendor ? 'Hiring...' : 'Hire Vendor'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Invite Link — shown alongside the emailed invite as a manual fallback */}
+      <Modal
+        isOpen={!!inviteLinkResult}
+        onClose={() => setInviteLinkResult(null)}
+        title="Guest Added"
+        subtitle={inviteLinkResult?.emailSent ? 'Invitation emailed to the guest' : 'Could not send the invite email automatically'}
+      >
+        {inviteLinkResult && (
+          <div className="space-y-4">
+            {inviteLinkResult.emailSent ? (
+              <p className="text-sm text-slate-600">
+                An invitation email was sent to <strong className="text-slate-900">{inviteLinkResult.email}</strong> for {event.title}. You can also share this link directly:
+              </p>
+            ) : (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-semibold">
+                Could not email <strong>{inviteLinkResult.name}</strong> automatically — share this link with them directly instead.
+              </div>
+            )}
+            <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+              <Link2 className="w-4 h-4 text-slate-400 shrink-0" />
+              <span className="text-xs text-slate-700 truncate flex-1">{inviteLinkResult.rsvpLink}</span>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button variant="outline" size="sm" onClick={() => setInviteLinkResult(null)}>
+                Close
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={linkCopied ? Check : Link2}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(inviteLinkResult.rsvpLink);
+                    setLinkCopied(true);
+                  } catch (err) {
+                    console.error('Could not copy invite link:', err);
+                  }
+                }}
+              >
+                {linkCopied ? 'Copied' : 'Copy Link'}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

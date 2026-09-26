@@ -60,11 +60,12 @@ async function getMe(req, res) {
 
 
 
-// POST /api/auth/register — public signup. Always creates an 'organizer'
-// account — role is never taken from the client, only decided here.
+// POST /api/auth/register — public signup for Organizer or Staff accounts.
+// 'admin' is never accepted here — that stays DB-provisioned only,
+// regardless of what a client sends.
 async function register(req, res) {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, role } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'name, email, and password are required' });
@@ -73,22 +74,25 @@ async function register(req, res) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
+    const allowedRoles = ['organizer', 'staff'];
+    const finalRole = allowedRoles.includes(role) ? role : 'organizer';
+
     const password_hash = await bcrypt.hash(password, 10);
 
     const [result] = await pool.query(
-      "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'organizer')",
-      [name, email, password_hash]
+      'INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)',
+      [name, email, password_hash, finalRole]
     );
 
     const token = jwt.sign(
-      { user_id: result.insertId, role: 'organizer' },
+      { user_id: result.insertId, role: finalRole },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
     res.status(201).json({
       token,
-      user: { user_id: result.insertId, name, email, role: 'organizer' }
+      user: { user_id: result.insertId, name, email, role: finalRole }
     });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {

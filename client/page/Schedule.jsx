@@ -21,9 +21,11 @@ export default function Schedule() {
     notes: ''
   });
 
-  const selectedEvent = events.find(e => e.id === selectedEventId) || events[0];
+  // Real event ids are numbers, but a <select>'s onChange always yields a
+  // string — compare as strings so this keeps matching either way.
+  const selectedEvent = events.find(e => String(e.id) === String(selectedEventId)) || events[0];
 
-  const filteredSchedule = schedule.filter(s => !s.eventId || s.eventId === selectedEventId);
+  const filteredSchedule = schedule.filter(s => !s.eventId || String(s.eventId) === String(selectedEventId));
 
   const eventFilterOptions = events.map(e => ({ value: e.id, label: e.title }));
 

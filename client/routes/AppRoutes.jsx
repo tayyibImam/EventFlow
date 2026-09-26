@@ -30,7 +30,9 @@ import Settings from '../page/Settings';
 import Landing from '../page/Landing';
 import AuthPlaceholder from '../page/AuthPlaceholder';
 import AdminLogin from '../page/AdminLogin';
+import RsvpPage from '../page/RsvpPage';
 import RequireAdmin from './RequireAdmin';
+import RequireRoleOrDemo from './RequireRoleOrDemo';
 
 export default function AppRoutes() {
   return (
@@ -40,8 +42,20 @@ export default function AppRoutes() {
       <Route path="/signup" element={<AuthPlaceholder />} />
       <Route path="/signin" element={<AuthPlaceholder />} />
 
-      {/* Organizer Routes (Default Flow) */}
-      <Route element={<DashboardLayout />}>
+      {/* Guest RSVP — unauthenticated, reached via a per-invite token link
+          (stands in for a real emailed invite for now) */}
+      <Route path="/rsvp/:token" element={<RsvpPage />} />
+
+      {/* Organizer Routes (Default Flow) — protected against a real admin/staff
+          session landing here (e.g. /admin/venues edited down to /venues),
+          but still open to unauthenticated demo/perspective-switcher browsing */}
+      <Route
+        element={
+          <RequireRoleOrDemo role="organizer">
+            <DashboardLayout />
+          </RequireRoleOrDemo>
+        }
+      >
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/events" element={<Events />} />
         <Route path="/events/create" element={<CreateEvent />} />
@@ -74,7 +88,14 @@ export default function AppRoutes() {
       </Route>
 
       {/* Staff Portal */}
-      <Route path="/staff" element={<StaffLayout />}>
+      <Route
+        path="/staff"
+        element={
+          <RequireRoleOrDemo role="staff">
+            <StaffLayout />
+          </RequireRoleOrDemo>
+        }
+      >
         <Route index element={<StaffTasks />} />
       </Route>
 

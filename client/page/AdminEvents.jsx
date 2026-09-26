@@ -330,6 +330,7 @@ export default function AdminEvents() {
               value={form.status}
               onChange={(e) => setForm({ ...form, status: e.target.value })}
               options={['Planned', 'Ongoing', 'Completed', 'Cancelled']}
+              helperText="Planned/Ongoing/Completed switch automatically based on the event dates — only Cancelled sticks."
             />
           </div>
 

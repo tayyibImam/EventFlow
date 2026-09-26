@@ -1,3 +1,34 @@
+const fs = require('fs');
+const path = require('path');
+
+// Registered before anything else that could possibly throw (including the
+// route requires below), and before any risky, platform-specific API — a
+// previous version of this file called the undocumented
+// `process.stdout._handle.setBlocking()` here to work around lost output on
+// Windows, but that call itself could throw, and it ran *before* these
+// handlers were registered, so it could crash the process with nothing
+// caught and nothing logged. Removed; the crash.log file write below is a
+// safe, standard way to make sure the next crash is actually diagnosable.
+const crashLogPath = path.join(__dirname, 'crash.log');
+function logCrash(label, err) {
+  const entry = `\n[${new Date().toISOString()}] ${label}\n${err && err.stack ? err.stack : String(err)}\n`;
+  console.error(entry);
+  try {
+    fs.appendFileSync(crashLogPath, entry);
+  } catch (writeErr) {
+    console.error('Could not write to crash.log:', writeErr);
+  }
+}
+
+process.on('uncaughtException', (err) => {
+  logCrash('UNCAUGHT EXCEPTION', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logCrash('UNHANDLED REJECTION', reason);
+});
+
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
@@ -14,6 +45,7 @@ const scheduleRoutes = require('./src/routes/schedule.routes');
 const feedbackRoutes = require('./src/routes/feedback.routes');
 const eventVendorsRoutes = require('./src/routes/eventVendors.routes');
 const eventGuestsRoutes = require('./src/routes/eventGuests.routes');
+const rsvpRoutes = require('./src/routes/rsvp.routes');
 
 
 const app = express();
@@ -33,6 +65,7 @@ app.use('/api/schedule', scheduleRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/events/:eventId/vendors', eventVendorsRoutes);
 app.use('/api/events/:eventId/guests', eventGuestsRoutes);
+app.use('/api/rsvp', rsvpRoutes);
 
 
 app.get('/', (req, res) => res.send('EventFlow API is running'));

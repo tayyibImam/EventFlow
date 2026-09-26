@@ -24,7 +24,7 @@ import { useEventFlow } from '../context/EventFlowContext';
 export default function AuthPlaceholder() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { login, loginWithApi, registerWithApi, logout } = useEventFlow();
+  const { loginWithApi, registerWithApi, logout } = useEventFlow();
 
   // Check if redirected after signout
   const [justLoggedOut, setJustLoggedOut] = useState(Boolean(location.state?.loggedOut));
@@ -46,8 +46,11 @@ export default function AuthPlaceholder() {
   const [signInError, setSignInError] = useState('');
   const [signInSuccess, setSignInSuccess] = useState(false);
 
-  // Sign Up state
-  const [selectedRole, setSelectedRole] = useState('organizer'); // 'organizer' | 'staff' | 'guest' (Admin forbidden)
+  // Sign Up state — both Organizer and Staff are real accounts, created via
+  // the same /api/auth/register endpoint (role is validated server-side;
+  // 'admin' is never accepted no matter what's sent). Guests never sign up
+  // at all — see RsvpPage.jsx.
+  const [selectedRole, setSelectedRole] = useState('organizer');
   const [signUpName, setSignUpName] = useState('');
   const [signUpEmail, setSignUpEmail] = useState('');
   const [signUpOrg, setSignUpOrg] = useState('');
@@ -67,38 +70,24 @@ export default function AuthPlaceholder() {
   const handleQuickFill = (roleKey) => {
     setSignInError('');
     // These match the real accounts seeded in the database (sql/seed.sql).
-    // Guest has no real login yet — the guest portal stays demo-only for now.
+    // Guests don't sign in at all — they reach their event via a per-invite
+    // RSVP link (see RsvpPage.jsx), not this login page.
     if (roleKey === 'organizer') {
       setSignInEmail('organizer@eventflow.com');
       setSignInPassword('password123');
     } else if (roleKey === 'staff') {
       setSignInEmail('staff@eventflow.com');
       setSignInPassword('password123');
-    } else if (roleKey === 'guest') {
-      setSignInEmail('farhan.ahmed@investor.io');
-      setSignInPassword('GuestInvite2026!');
     }
   };
 
-  // Sign In Handler — calls the real backend (bcrypt + JWT) for everyone
-  // except the guest demo account, which has no row in the users table.
+  // Sign In Handler — calls the real backend (bcrypt + JWT).
   const handleSignInSubmit = async (e) => {
     e.preventDefault();
     setSignInError('');
 
     if (!signInEmail || !signInPassword) {
       setSignInError('Please provide both your work email and password.');
-      return;
-    }
-
-    // Guest portal is demo-only for now — the guests table has no password column.
-    if (signInEmail.includes('guest') || signInEmail.includes('investor')) {
-      setSignInSuccess(true);
-      setJustLoggedOut(false);
-      setTimeout(() => {
-        login('guest');
-        navigate('/guest');
-      }, 900);
       return;
     }
 
@@ -128,8 +117,7 @@ export default function AuthPlaceholder() {
     }
   };
 
-  // Sign Up Handler — real account creation for Organizer; Staff/Guest stay
-  // demo-only for now (see the role-picker note below).
+  // Sign Up Handler — creates a real account with the chosen role.
   const handleSignUpSubmit = async (e) => {
     e.preventDefault();
     setSignUpError('');
@@ -155,22 +143,11 @@ export default function AuthPlaceholder() {
       return;
     }
 
-    if (selectedRole !== 'organizer') {
-      // Staff/Guest signup isn't wired to the backend yet — keep the old demo flow.
-      setSignUpSuccess(true);
-      setJustLoggedOut(false);
-      setTimeout(() => {
-        login(selectedRole);
-        navigate(selectedRole === 'staff' ? '/staff' : '/guest');
-      }, 1200);
-      return;
-    }
-
     try {
-      await registerWithApi(signUpName.trim(), signUpEmail.trim(), signUpPassword);
+      const user = await registerWithApi(signUpName.trim(), signUpEmail.trim(), signUpPassword, selectedRole);
       setSignUpSuccess(true);
       setJustLoggedOut(false);
-      setTimeout(() => navigate('/dashboard'), 800);
+      setTimeout(() => navigate(user.role === 'staff' ? '/staff' : '/dashboard'), 800);
     } catch (err) {
       setSignUpError(err.message || 'Could not create your account. Please try again.');
     }
@@ -317,7 +294,7 @@ export default function AuthPlaceholder() {
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">1-Click Setup</span>
               </div>
-              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                 <button
                   type="button"
                   onClick={() => handleQuickFill('organizer')}
@@ -331,13 +308,6 @@ export default function AuthPlaceholder() {
                   className="px-2 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-semibold rounded-lg border border-slate-200 text-center transition-colors cursor-pointer"
                 >
                   Staff
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickFill('guest')}
-                  className="px-2 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-semibold rounded-lg border border-slate-200 text-center transition-colors cursor-pointer"
-                >
-                  Guest
                 </button>
               </div>
             </div>
@@ -490,12 +460,12 @@ export default function AuthPlaceholder() {
               </div>
             )}
 
-            {/* Role Selection (Admin strictly excluded as required) */}
+            {/* Role Selection — Admin is never self-service; Guests never sign up at all */}
             <div className="space-y-2">
               <label className="block text-xs font-bold text-[#1B3A5C] uppercase tracking-wider">
                 Select Your Account Role <span className="text-rose-500">*</span>
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {[
                   {
                     id: 'organizer',
@@ -508,12 +478,6 @@ export default function AuthPlaceholder() {
                     label: 'Staff',
                     desc: 'View & update tasks',
                     icon: CheckSquare
-                  },
-                  {
-                    id: 'guest',
-                    label: 'Guest',
-                    desc: 'RSVP & invitations',
-                    icon: Mail
                   }
                 ].map((role) => {
                   const IconComp = role.icon;
@@ -555,7 +519,7 @@ export default function AuthPlaceholder() {
                 })}
               </div>
               <p className="text-[11px] text-slate-400 italic">
-                Note: Administrative accounts are provisioned directly via platform governance.
+                Note: Administrative accounts are provisioned directly via platform governance. Guests don't need an account — organizers send a direct RSVP link for each event.
               </p>
             </div>
 

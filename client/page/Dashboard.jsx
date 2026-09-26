@@ -21,24 +21,26 @@ import EventCard from '../component/EventCard';
 import Button from '../component/Button';
 
 export default function Dashboard() {
-  const { events, tasks, guests, activities, currentProfile } = useEventFlow();
+  const { events, tasks, guests, activities, currentProfile, getEventProgress } = useEventFlow();
 
   // Calculate realistic summary values
-  const totalEventsCount = 12; // Platform overall benchmark requested
+  const totalEventsCount = events.length;
   const upcomingEvents = events.filter(e => e.status === 'Planned' || e.status === 'Ongoing');
-  const pendingTasksCount = 18; // Benchmark as requested
-  const confirmedGuestsCount = 126; // Benchmark as requested
+  const pendingTasksCount = tasks.filter(t => t.status === 'Pending').length;
+  const acceptedGuestsCount = guests.filter(g => g.rsvpStatus === 'Accepted').length;
+  const rsvpRate = guests.length > 0 ? Math.round((acceptedGuestsCount / guests.length) * 100) : 0;
 
   // Featured flagship event for planning progress
-  const flagshipEvent = events.find(e => e.id === 'evt-101') || events[0];
+  const flagshipEvent = events[0];
+  const flagshipProgress = flagshipEvent ? getEventProgress(flagshipEvent.id) : null;
 
-  const planningMilestones = [
-    { label: "Venue", status: "Completed", percent: 100, color: "bg-emerald-500", textColor: "text-emerald-700" },
-    { label: "Vendors", status: "Completed", percent: 100, color: "bg-emerald-500", textColor: "text-emerald-700" },
-    { label: "Guests", status: "72%", percent: 72, color: "bg-[#1B3A5C]", textColor: "text-[#1B3A5C]" },
-    { label: "Tasks", status: "60%", percent: 60, color: "bg-[#D4A537]", textColor: "text-[#D4A537]" },
-    { label: "Schedule", status: "40%", percent: 40, color: "bg-sky-500", textColor: "text-sky-700" }
-  ];
+  const planningMilestones = flagshipProgress ? [
+    { label: "Venue", status: flagshipProgress.venue === 100 ? "Assigned" : "Not assigned", percent: flagshipProgress.venue, color: "bg-emerald-500", textColor: "text-emerald-700" },
+    { label: "Vendors", status: `${flagshipProgress.vendors}%`, percent: flagshipProgress.vendors, color: "bg-emerald-500", textColor: "text-emerald-700" },
+    { label: "Guests", status: `${flagshipProgress.guests}%`, percent: flagshipProgress.guests, color: "bg-[#1B3A5C]", textColor: "text-[#1B3A5C]" },
+    { label: "Tasks", status: `${flagshipProgress.tasks}%`, percent: flagshipProgress.tasks, color: "bg-[#D4A537]", textColor: "text-[#D4A537]" },
+    { label: "Schedule", status: flagshipProgress.schedule === 100 ? "Published" : "Not published", percent: flagshipProgress.schedule, color: "bg-sky-500", textColor: "text-sky-700" }
+  ] : [];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
@@ -92,8 +94,8 @@ export default function Dashboard() {
           <DashboardCard
             id="dash-total-events"
             title="Total Events"
-            value="12"
-            subtitle="Across 8 categories"
+            value={totalEventsCount.toString()}
+            subtitle="All-time across your account"
             icon={CalendarDays}
             iconBg="bg-blue-50"
             iconColor="text-[#1B3A5C]"
@@ -102,8 +104,8 @@ export default function Dashboard() {
           <DashboardCard
             id="dash-upcoming-events"
             title="Upcoming Events"
-            value="4"
-            subtitle="Next: Tech Conference '26"
+            value={upcomingEvents.length.toString()}
+            subtitle={upcomingEvents[0] ? `Next: ${upcomingEvents[0].title}` : 'Nothing scheduled yet'}
             icon={Clock}
             iconBg="bg-sky-50"
             iconColor="text-[#7FB3D5]"
@@ -113,22 +115,22 @@ export default function Dashboard() {
           <DashboardCard
             id="dash-pending-tasks"
             title="Pending Tasks"
-            value="18"
-            subtitle="5 high priority today"
+            value={pendingTasksCount.toString()}
+            subtitle="Across all your events"
             icon={CheckSquare}
             iconBg="bg-amber-50"
             iconColor="text-[#D4A537]"
-            badge="18 Remaining"
+            badge={`${pendingTasksCount} Remaining`}
           />
           <DashboardCard
             id="dash-confirmed-guests"
             title="Confirmed Guests"
-            value="126"
-            subtitle="72% target RSVP rate"
+            value={acceptedGuestsCount.toString()}
+            subtitle={`${rsvpRate}% RSVP acceptance rate`}
             icon={Users}
             iconBg="bg-emerald-50"
             iconColor="text-emerald-700"
-            badge="72% Confirmed"
+            badge={`${rsvpRate}% Confirmed`}
             badgeType="positive"
           />
         </div>
@@ -185,7 +187,7 @@ export default function Dashboard() {
                   </p>
                 </div>
                 <span className="text-xs font-bold text-[#D4A537] bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-                  {flagshipEvent.progress?.overall || 74}% Ready
+                  {flagshipProgress.overall}% Ready
                 </span>
               </div>
 
@@ -235,22 +237,28 @@ export default function Dashboard() {
             </div>
 
             <div className="mt-4 space-y-4">
-              {activities.slice(0, 5).map((act) => (
-                <div key={act.id} className="flex items-start gap-3 text-xs">
-                  <div className="w-2 h-2 rounded-full bg-[#1B3A5C] mt-1.5 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-slate-800 leading-snug">
-                      {act.title}
-                    </p>
-                    <p className="text-slate-500 text-[11px] mt-0.5">
-                      {act.description}
-                    </p>
-                    <span className="text-[10px] text-slate-400 mt-1 block">
-                      {act.timestamp}
-                    </span>
+              {activities.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">
+                  No activity yet this session.
+                </p>
+              ) : (
+                activities.slice(0, 5).map((act) => (
+                  <div key={act.id} className="flex items-start gap-3 text-xs">
+                    <div className="w-2 h-2 rounded-full bg-[#1B3A5C] mt-1.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-800 leading-snug">
+                        {act.title}
+                      </p>
+                      <p className="text-slate-500 text-[11px] mt-0.5">
+                        {act.description}
+                      </p>
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        {act.timestamp}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>

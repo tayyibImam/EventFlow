@@ -40,11 +40,12 @@ export default function Sidebar({ isOpen, onClose }) {
           { name: 'Vendors', path: '/admin/vendors', icon: Store }
         ];
       case 'staff':
+        // /events and /schedule are the organizer's own pages — a real staff
+        // session gets redirected away from them (see RequireRoleOrDemo), so
+        // they aren't linked here. The staff portal is just their task list
+        // for now, at the actual route (/staff, not /staff/tasks).
         return [
-          { name: 'Dashboard', path: '/staff/tasks', icon: LayoutDashboard },
-          { name: 'My Tasks', path: '/staff/tasks', icon: CheckSquare },
-          { name: 'Assigned Events', path: '/events', icon: CalendarDays },
-          { name: 'Event Schedule', path: '/schedule', icon: Clock }
+          { name: 'My Tasks', path: '/staff', icon: CheckSquare }
         ];
       case 'guest':
         return [

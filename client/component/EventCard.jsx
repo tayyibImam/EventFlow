@@ -10,8 +10,11 @@ import {
   Clock
 } from 'lucide-react';
 import StatusBadge from './StatusBadge';
+import { useEventFlow } from '../context/EventFlowContext';
 
 export default function EventCard({ event }) {
+  const { getEventProgress } = useEventFlow();
+
   const {
     id,
     title,
@@ -20,8 +23,7 @@ export default function EventCard({ event }) {
     endDate,
     venue,
     status,
-    expectedGuests,
-    progress = { overall: 0 }
+    expectedGuests
   } = event;
 
   const formatDate = (dateStr) => {
@@ -30,7 +32,10 @@ export default function EventCard({ event }) {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const progressVal = typeof progress === 'number' ? progress : (progress.overall || 0);
+  // event.progress is a stale placeholder baked in when the event was
+  // loaded/created — real readiness is computed live from actual
+  // venue/vendor/guest/task/schedule data instead.
+  const progressVal = getEventProgress(id).overall;
 
   return (
     <div

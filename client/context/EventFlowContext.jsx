@@ -26,7 +26,26 @@ function toIsoLike(dbDateTime) {
   return dbDateTime ? dbDateTime.replace(' ', 'T') : dbDateTime;
 }
 
+// Status is date-driven — Planned before start, Ongoing between start and
+// end, Completed after end — with Cancelled as the one manual override that
+// always wins, no matter what the dates say. Recomputed every time an event
+// is loaded/created/updated, so it self-corrects on the next page view.
+function computeDisplayStatus(rawStatus, startDate, endDate) {
+  if (rawStatus === 'Cancelled') return 'Cancelled';
+  if (!startDate) return rawStatus;
+
+  const now = new Date();
+  const start = new Date(startDate);
+  const end = endDate ? new Date(endDate) : start;
+
+  if (now < start) return 'Planned';
+  if (now <= end) return 'Ongoing';
+  return 'Completed';
+}
+
 function mapEventFromApi(row) {
+  const startDate = toIsoLike(row.start_datetime);
+  const endDate = toIsoLike(row.end_datetime);
   return {
     id: row.event_id,
     title: row.title,
@@ -36,9 +55,9 @@ function mapEventFromApi(row) {
     venueId: row.venue_id,
     categoryId: row.category_id,
     organizerId: row.organizer_id,
-    startDate: toIsoLike(row.start_datetime),
-    endDate: toIsoLike(row.end_datetime),
-    status: mapStatusFromApi(row.status),
+    startDate,
+    endDate,
+    status: computeDisplayStatus(mapStatusFromApi(row.status), startDate, endDate),
     budget: row.budget,
     expectedGuests: 0,
     organizer: 'You',
@@ -97,10 +116,11 @@ function mapVenueFromApi(row) {
   };
 }
 
-// vendors table has no rating/specialty/availability columns, and booking
-// status genuinely belongs to a specific event (event_vendors), not the
-// vendor globally — those stay demo defaults until a per-event booking flow
-// exists here.
+// vendors table has no rating/specialty/availability columns. Booking status
+// and agreed price are real, but belong to a specific event (event_vendors),
+// not the vendor globally — this directory-level object stays unbooked
+// (bookingStatus undefined) until it's joined against a real booking for a
+// specific event (see eventVendorBookings below).
 function mapVendorFromApi(row) {
   return {
     id: row.vendor_id,
@@ -113,8 +133,27 @@ function mapVendorFromApi(row) {
     availability: 'Available',
     rating: null,
     agreedPrice: formatCurrency(row.base_price),
-    bookingStatus: 'Pending',
     specialty: null
+  };
+}
+
+function mapBookingStatusFromApi(status) {
+  const map = { pending: 'Pending', confirmed: 'Confirmed', cancelled: 'Cancelled' };
+  return map[status] || 'Pending';
+}
+
+function mapBookingStatusToApi(status) {
+  const map = { Pending: 'pending', Confirmed: 'confirmed', Cancelled: 'cancelled' };
+  return map[status] || 'pending';
+}
+
+function mapEventVendorFromApi(row) {
+  return {
+    id: row.event_vendor_id,
+    eventId: row.event_id,
+    vendorId: row.vendor_id,
+    agreedPrice: row.agreed_price,
+    status: mapBookingStatusFromApi(row.status)
   };
 }
 
@@ -123,16 +162,106 @@ function toDateTime(dateStr, fallbackTime) {
   return `${dateStr} ${fallbackTime}`;
 }
 
+function mapTaskStatusFromApi(status) {
+  const map = { pending: 'Pending', in_progress: 'In Progress', done: 'Done' };
+  return map[status] || 'Pending';
+}
+
+function mapTaskStatusToApi(status) {
+  const map = { Pending: 'pending', 'In Progress': 'in_progress', Done: 'done' };
+  return map[status] || 'pending';
+}
+
+// tasks has no priority column — that stays a local-only display field,
+// same as venues/vendors' non-schema extras. assigned_to IS a real user_id
+// FK now that GET /api/users/staff-directory exists; the display name is
+// resolved by joining against staffDirectory (see visibleTasks below), not
+// baked in here.
+function mapTaskFromApi(row, overlay = {}) {
+  return {
+    id: row.task_id,
+    eventId: row.event_id,
+    title: row.title,
+    description: row.description || '',
+    dueDate: row.due_date,
+    status: mapTaskStatusFromApi(row.status),
+    priority: overlay.priority || 'Medium',
+    assignedToId: row.assigned_to
+  };
+}
+
+function mapStaffDirectoryFromApi(row) {
+  return { id: row.user_id, name: row.name, email: row.email };
+}
+
+function toTimeInput(dbTime) {
+  return dbTime ? dbTime.slice(0, 5) : '';
+}
+
+function toTimeDb(inputTime) {
+  if (!inputTime) return null;
+  return inputTime.length === 5 ? `${inputTime}:00` : inputTime;
+}
+
+// event_schedule has no location column — stays a local-only display field.
+function mapScheduleFromApi(row, overlay = {}) {
+  return {
+    id: row.schedule_id,
+    eventId: row.event_id,
+    activity: row.activity_title,
+    startTime: toTimeInput(row.start_time),
+    endTime: toTimeInput(row.end_time),
+    notes: row.notes || '',
+    location: overlay.location || ''
+  };
+}
+
+function mapGuestFromApi(row) {
+  return {
+    guestId: row.guest_id,
+    name: row.name,
+    email: row.email || '',
+    phone: row.phone || '',
+    description: row.description || ''
+  };
+}
+
+function mapRsvpFromApi(status) {
+  const map = { invited: 'Invited', accepted: 'Accepted', declined: 'Declined', no_response: 'No Response' };
+  return map[status] || 'Invited';
+}
+
+function mapRsvpToApi(status) {
+  const map = { Invited: 'invited', Accepted: 'accepted', Declined: 'declined', 'No Response': 'no_response' };
+  return map[status] || 'invited';
+}
+
+// guestName isn't stored on the feedback row — it's joined against the
+// guest directory when `feedback` is composed for consumers (see below).
+function mapFeedbackFromApi(row) {
+  return {
+    id: row.feedback_id,
+    eventId: row.event_id,
+    guestId: row.guest_id,
+    rating: row.rating,
+    comment: row.comment || '',
+    date: row.submitted_at ? row.submitted_at.slice(0, 10) : ''
+  };
+}
+
 const EventFlowContext = createContext(null);
 
 export function EventFlowProvider({ children }) {
   // Current user role for demonstration: 'organizer' | 'admin' | 'staff' | 'guest'
   const [currentRole, setCurrentRole] = useState('organizer');
 
-  // Authentication session state
+  // Authentication session state — defaults to signed-out. A brand-new
+  // visitor has no localStorage entry at all, and treating that as "signed
+  // in" (the old `saved !== 'false'` check) made every first-time visit look
+  // pre-authenticated as the hardcoded organizer demo persona.
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     const saved = localStorage.getItem('eventflow_authenticated');
-    return saved !== 'false';
+    return saved === 'true';
   });
 
   // Real backend session (set by loginWithApi)
@@ -258,6 +387,72 @@ export function EventFlowProvider({ children }) {
       .finally(() => setVendorsLoading(false));
   }, []);
 
+  useEffect(() => {
+    fetch(`${API_URL}/guests`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load guests');
+        return res.json();
+      })
+      .then((rows) => setGuestDirectory(rows.map(mapGuestFromApi)))
+      .catch((err) => {
+        console.warn('Using demo guests — could not reach the API:', err.message);
+      })
+      .finally(() => setGuestsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetch(`${API_URL}/tasks`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load tasks');
+        return res.json();
+      })
+      .then((rows) => setTasks(rows.map((row) => mapTaskFromApi(row))))
+      .catch((err) => {
+        console.warn('Using demo tasks — could not reach the API:', err.message);
+      })
+      .finally(() => setTasksLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!authToken) return;
+
+    fetch(`${API_URL}/users/staff-directory`, { headers: { Authorization: `Bearer ${authToken}` } })
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load staff directory');
+        return res.json();
+      })
+      .then((rows) => setStaffDirectory(rows.map(mapStaffDirectoryFromApi)))
+      .catch((err) => {
+        console.warn('Could not load staff directory:', err.message);
+      });
+  }, [authToken]);
+
+  useEffect(() => {
+    fetch(`${API_URL}/schedule`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load schedule');
+        return res.json();
+      })
+      .then((rows) => setSchedule(rows.map((row) => mapScheduleFromApi(row))))
+      .catch((err) => {
+        console.warn('Using demo schedule — could not reach the API:', err.message);
+      })
+      .finally(() => setScheduleLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetch(`${API_URL}/feedback`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load feedback');
+        return res.json();
+      })
+      .then((rows) => setFeedbackRaw(rows.map(mapFeedbackFromApi)))
+      .catch((err) => {
+        console.warn('Using demo feedback — could not reach the API:', err.message);
+      })
+      .finally(() => setFeedbackLoading(false));
+  }, []);
+
   const [venues, setVenues] = useState(() => {
     const saved = localStorage.getItem('eventflow_venues');
     return saved ? JSON.parse(saved) : initialVenues;
@@ -268,25 +463,59 @@ export function EventFlowProvider({ children }) {
     return saved ? JSON.parse(saved) : initialVendors;
   });
 
-  const [guests, setGuests] = useState(() => {
-    const saved = localStorage.getItem('eventflow_guests');
-    return saved ? JSON.parse(saved) : initialGuests;
+  // Guests are modeled as a global directory (guests table) plus a per-event
+  // invitation/RSVP record (event_guests) — `guests` below composes the two
+  // into one row per invitation, matching how every other page here already
+  // expects to consume it (one guest = one event = one RSVP).
+  const [guestDirectory, setGuestDirectory] = useState(() => {
+    const saved = localStorage.getItem('eventflow_guest_directory');
+    if (saved) return JSON.parse(saved);
+    return initialGuests.map(g => ({ guestId: g.id, name: g.name, email: g.email, phone: g.phone }));
   });
+
+  const [invitations, setInvitations] = useState(() => {
+    const saved = localStorage.getItem('eventflow_invitations');
+    if (saved) return JSON.parse(saved);
+    return initialGuests.map(g => ({
+      eventId: g.eventId,
+      guestId: g.id,
+      rsvpStatus: g.rsvpStatus,
+      organization: g.organization,
+      role: g.role,
+      invitationStatus: g.invitationStatus
+    }));
+  });
+
+  const [guestsLoading, setGuestsLoading] = useState(true);
+
+  // Per-event vendor bookings (event_vendors) — mirrors the guest
+  // invitations model above: a vendor is only "hired" in the context of a
+  // specific event, never globally.
+  const [eventVendorBookings, setEventVendorBookings] = useState([]);
 
   const [tasks, setTasks] = useState(() => {
     const saved = localStorage.getItem('eventflow_tasks');
     return saved ? JSON.parse(saved) : initialTasks;
   });
+  const [tasksLoading, setTasksLoading] = useState(true);
+
+  // Real accounts with role='staff' — powers the "Assigned Staff Member"
+  // picker (replacing the old hardcoded 4-name list) and resolves task
+  // assignee display names. Needs a real JWT (any role), so it only loads
+  // once someone is actually logged in.
+  const [staffDirectory, setStaffDirectory] = useState([]);
 
   const [schedule, setSchedule] = useState(() => {
     const saved = localStorage.getItem('eventflow_schedule');
     return saved ? JSON.parse(saved) : initialSchedule;
   });
+  const [scheduleLoading, setScheduleLoading] = useState(true);
 
-  const [feedback, setFeedback] = useState(() => {
+  const [feedbackRaw, setFeedbackRaw] = useState(() => {
     const saved = localStorage.getItem('eventflow_feedback');
     return saved ? JSON.parse(saved) : initialFeedback;
   });
+  const [feedbackLoading, setFeedbackLoading] = useState(true);
 
   const [users, setUsers] = useState(() => {
     const saved = localStorage.getItem('eventflow_users');
@@ -298,9 +527,17 @@ export function EventFlowProvider({ children }) {
     return saved ? JSON.parse(saved) : initialCategories;
   });
 
+  // There's no backend table for activities — it's a session-local audit
+  // trail populated purely by addActivity() calls scattered through the
+  // real actions below. It must never seed from mock data (previously
+  // defaulted to initialActivities' fake "Dr. Salman Chowdhury confirmed
+  // attendance..."-style entries), or the audit stream would show
+  // pre-baked events that never actually happened. The storage key was
+  // bumped so anyone with the old mock-seeded list in localStorage also
+  // gets a clean start.
   const [activities, setActivities] = useState(() => {
-    const saved = localStorage.getItem('eventflow_activities');
-    return saved ? JSON.parse(saved) : initialActivities;
+    const saved = localStorage.getItem('eventflow_activities_v2');
+    return saved ? JSON.parse(saved) : [];
   });
 
   // Global selected event filter (for header event selector)
@@ -313,6 +550,141 @@ export function EventFlowProvider({ children }) {
     }
     return events;
   }, [events, realUser]);
+
+  // tasks/schedule/feedback come from GET routes that return every row in
+  // the table, with no per-organizer filtering server-side — without this,
+  // an organizer would see every other organizer's tasks and reviews too
+  // (and, with zero events of their own, still see everyone else's).
+  const visibleTasks = useMemo(() => {
+    let scoped = tasks;
+    if (realUser && realUser.role === 'organizer') {
+      const ids = new Set(visibleEvents.map(e => e.id));
+      scoped = tasks.filter(t => ids.has(t.eventId));
+    } else if (realUser && realUser.role === 'staff') {
+      // Staff only ever see tasks actually assigned to their own account.
+      scoped = tasks.filter(t => t.assignedToId === realUser.user_id);
+    }
+
+    return scoped.map(t => {
+      const staffMember = staffDirectory.find(s => s.id === t.assignedToId);
+      return { ...t, assignedTo: staffMember?.name || 'Unassigned' };
+    });
+  }, [tasks, visibleEvents, realUser, staffDirectory]);
+
+  const visibleSchedule = useMemo(() => {
+    if (realUser && realUser.role === 'organizer') {
+      const ids = new Set(visibleEvents.map(e => e.id));
+      return schedule.filter(s => ids.has(s.eventId));
+    }
+    return schedule;
+  }, [schedule, visibleEvents, realUser]);
+
+  // Invitations (event_guests) only exist for events with a real numeric
+  // backend id — local-only fallback events never got one, so their
+  // invitations are kept as-is rather than wiped by this refetch. Anything
+  // else (including the mock/demo seed data this state starts from) is
+  // dropped once we know which events the organizer can actually see —
+  // otherwise a brand-new organizer with zero real events would keep
+  // showing the 16 fake demo guests forever, since they'd never get
+  // reconciled away.
+  useEffect(() => {
+    const visibleEventIds = new Set(visibleEvents.map((e) => e.id));
+    const realEventIds = visibleEvents.filter(e => typeof e.id === 'number').map(e => e.id);
+
+    const fetchInvitations = () => {
+      const fetchReal = realEventIds.length > 0
+        ? Promise.all(
+            realEventIds.map((eventId) =>
+              fetch(`${API_URL}/events/${eventId}/guests`)
+                .then((r) => (r.ok ? r.json() : []))
+                .then((rows) => rows.map((row) => ({
+                  eventId: row.event_id,
+                  guestId: row.guest_id,
+                  rsvpStatus: mapRsvpFromApi(row.rsvp_status),
+                  token: row.token
+                })))
+                .catch(() => [])
+            )
+          ).then((results) => results.flat())
+        : Promise.resolve([]);
+
+      fetchReal.then((realInvites) => {
+        setInvitations((prev) => {
+          const localOnly = prev.filter((inv) => typeof inv.eventId !== 'number' && visibleEventIds.has(inv.eventId));
+          return [...localOnly, ...realInvites];
+        });
+      });
+    };
+
+    fetchInvitations();
+
+    // Guests RSVP through an unauthenticated public link (see RsvpPage) with
+    // no way to push the change back to an organizer's already-open tab —
+    // poll instead so an accepted/declined RSVP shows up on its own.
+    const intervalId = setInterval(fetchInvitations, 20000);
+    return () => clearInterval(intervalId);
+  }, [visibleEvents]);
+
+  // Same model as the invitations effect above, for event_vendors.
+  useEffect(() => {
+    const visibleEventIds = new Set(visibleEvents.map((e) => e.id));
+    const realEventIds = visibleEvents.filter(e => typeof e.id === 'number').map(e => e.id);
+
+    const fetchReal = realEventIds.length > 0
+      ? Promise.all(
+          realEventIds.map((eventId) =>
+            fetch(`${API_URL}/events/${eventId}/vendors`)
+              .then((r) => (r.ok ? r.json() : []))
+              .then((rows) => rows.map(mapEventVendorFromApi))
+              .catch(() => [])
+          )
+        ).then((results) => results.flat())
+      : Promise.resolve([]);
+
+    fetchReal.then((realBookings) => {
+      setEventVendorBookings((prev) => {
+        const localOnly = prev.filter((b) => typeof b.eventId !== 'number' && visibleEventIds.has(b.eventId));
+        return [...localOnly, ...realBookings];
+      });
+    });
+  }, [visibleEvents]);
+
+  // One row per invitation — the shape every guest-consuming page expects.
+  const guests = useMemo(() => {
+    return invitations.map((inv) => {
+      const g = guestDirectory.find((gd) => gd.guestId === inv.guestId) || {};
+      return {
+        id: `${inv.eventId}::${inv.guestId}`,
+        guestId: inv.guestId,
+        eventId: inv.eventId,
+        name: g.name || 'Unknown Guest',
+        email: g.email || '',
+        phone: g.phone || '',
+        description: g.description || '',
+        rsvpStatus: inv.rsvpStatus,
+        organization: inv.organization || '',
+        role: inv.role || 'Delegate',
+        invitationStatus: inv.invitationStatus || 'Sent',
+        rsvpToken: inv.token || null,
+        rsvpLink: inv.token ? `${window.location.origin}/rsvp/${inv.token}` : null
+      };
+    });
+  }, [invitations, guestDirectory]);
+
+  // feedback.guest_id is real, but the name lives on the guest directory —
+  // joined here rather than baked into stored state to sidestep the
+  // guests-not-loaded-yet race on first mount. Also scoped to the
+  // organizer's own visible events, same as tasks/schedule above.
+  const feedback = useMemo(() => {
+    const scoped = (realUser && realUser.role === 'organizer')
+      ? feedbackRaw.filter((fb) => visibleEvents.some((e) => e.id === fb.eventId))
+      : feedbackRaw;
+
+    return scoped.map((fb) => {
+      const guest = guestDirectory.find((g) => g.guestId === fb.guestId);
+      return { ...fb, guestName: guest?.name || fb.guestName || 'Guest' };
+    });
+  }, [feedbackRaw, guestDirectory, visibleEvents, realUser]);
 
   // Sync to local storage
   useEffect(() => {
@@ -328,8 +700,12 @@ export function EventFlowProvider({ children }) {
   }, [vendors]);
 
   useEffect(() => {
-    localStorage.setItem('eventflow_guests', JSON.stringify(guests));
-  }, [guests]);
+    localStorage.setItem('eventflow_guest_directory', JSON.stringify(guestDirectory));
+  }, [guestDirectory]);
+
+  useEffect(() => {
+    localStorage.setItem('eventflow_invitations', JSON.stringify(invitations));
+  }, [invitations]);
 
   useEffect(() => {
     localStorage.setItem('eventflow_tasks', JSON.stringify(tasks));
@@ -340,8 +716,8 @@ export function EventFlowProvider({ children }) {
   }, [schedule]);
 
   useEffect(() => {
-    localStorage.setItem('eventflow_feedback', JSON.stringify(feedback));
-  }, [feedback]);
+    localStorage.setItem('eventflow_feedback', JSON.stringify(feedbackRaw));
+  }, [feedbackRaw]);
 
   useEffect(() => {
     localStorage.setItem('eventflow_categories', JSON.stringify(categories));
@@ -386,6 +762,7 @@ export function EventFlowProvider({ children }) {
       const eventObj = {
         ...newEvent,
         id: `evt-${Date.now()}`,
+        status: computeDisplayStatus(newEvent.status || 'Planned', newEvent.startDate, newEvent.endDate),
         progress: { venue: 100, vendors: 40, guests: 20, tasks: 10, schedule: 0, overall: 34 },
         organizer: currentProfile.organizer.name
       };
@@ -442,98 +819,311 @@ export function EventFlowProvider({ children }) {
     }
   };
 
-  const addGuest = (newGuest) => {
-    const guestObj = {
-      ...newGuest,
-      id: `gst-${Date.now()}`
-    };
-    setGuests(prev => [guestObj, ...prev]);
+  // Reuses a directory entry by email if one already exists (guests has no
+  // unique constraint on email, so this is a best-effort client-side dedup),
+  // then creates the event_guests invitation. Falls back to a local-only
+  // guest + invitation on failure, same as the rest of the app's domains.
+  const addGuest = async (form) => {
+    try {
+      let guest = guestDirectory.find(
+        (g) => g.email && form.email && g.email.toLowerCase() === form.email.toLowerCase()
+      );
 
-    addActivity({
-      title: "New guest added",
-      description: `${guestObj.name} was registered for the guest list`,
-      type: "guest"
-    });
-    return guestObj;
+      if (!guest) {
+        const res = await fetch(`${API_URL}/guests`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: form.name, email: form.email, phone: form.phone, description: form.description })
+        });
+        if (!res.ok) throw new Error('Failed to create guest');
+        guest = mapGuestFromApi(await res.json());
+        setGuestDirectory(prev => [...prev, guest]);
+      }
+
+      const rsvpStatus = form.rsvpStatus || 'Invited';
+
+      const inviteRes = await fetch(`${API_URL}/events/${form.eventId}/guests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guest_id: guest.guestId })
+      });
+      if (!inviteRes.ok) throw new Error('Failed to invite guest');
+      const inviteRow = await inviteRes.json();
+
+      if (rsvpStatus !== 'Invited') {
+        await fetch(`${API_URL}/events/${form.eventId}/guests/${guest.guestId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rsvp_status: mapRsvpToApi(rsvpStatus) })
+        });
+      }
+
+      const newInvite = {
+        eventId: form.eventId,
+        guestId: guest.guestId,
+        rsvpStatus,
+        organization: form.organization || '',
+        role: form.role || 'Delegate',
+        invitationStatus: form.invitationStatus || 'Sent',
+        token: inviteRow.token
+      };
+      setInvitations(prev => [newInvite, ...prev]);
+
+      addActivity({
+        title: "New guest added",
+        description: `${guest.name} was registered for the guest list`,
+        type: "guest"
+      });
+
+      return {
+        id: `${form.eventId}::${guest.guestId}`,
+        ...guest,
+        ...newInvite,
+        rsvpLink: newInvite.token ? `${window.location.origin}/rsvp/${newInvite.token}` : null,
+        emailSent: !!inviteRow.email_sent
+      };
+    } catch (err) {
+      console.error('addGuest: could not reach the API, saving locally only:', err);
+      const guestId = `local-${Date.now()}`;
+      const localGuest = { guestId, name: form.name, email: form.email, phone: form.phone || '', description: form.description || '' };
+      setGuestDirectory(prev => [...prev, localGuest]);
+      const newInvite = {
+        eventId: form.eventId,
+        guestId,
+        rsvpStatus: form.rsvpStatus || 'Invited',
+        organization: form.organization || '',
+        role: form.role || 'Delegate',
+        invitationStatus: form.invitationStatus || 'Sent'
+      };
+      setInvitations(prev => [newInvite, ...prev]);
+      return { id: `${form.eventId}::${guestId}`, ...localGuest, ...newInvite };
+    }
   };
 
-  const updateGuestRSVP = (guestId, newRSVP) => {
-    setGuests(prev => prev.map(g => g.id === guestId ? { ...g, rsvpStatus: newRSVP } : g));
-    const target = guests.find(g => g.id === guestId);
-    if (target) {
+  const updateGuestRSVP = async (rowId, newRSVP) => {
+    const [eventIdRaw, guestIdRaw] = rowId.split('::');
+    const eventId = Number.isNaN(Number(eventIdRaw)) ? eventIdRaw : Number(eventIdRaw);
+    const guestId = Number.isNaN(Number(guestIdRaw)) ? guestIdRaw : Number(guestIdRaw);
+
+    setInvitations(prev => prev.map(inv =>
+      (inv.eventId === eventId && inv.guestId === guestId) ? { ...inv, rsvpStatus: newRSVP } : inv
+    ));
+
+    const guest = guestDirectory.find(g => g.guestId === guestId);
+
+    try {
+      const res = await fetch(`${API_URL}/events/${eventId}/guests/${guestId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rsvp_status: mapRsvpToApi(newRSVP) })
+      });
+      if (!res.ok) throw new Error('Failed to update RSVP');
+    } catch (err) {
+      console.error('updateGuestRSVP: could not reach the API, kept local change only:', err);
+    }
+
+    if (guest) {
       addActivity({
         title: "Guest RSVP updated",
-        description: `${target.name} marked RSVP as ${newRSVP}`,
+        description: `${guest.name} marked RSVP as ${newRSVP}`,
         type: "guest"
       });
     }
   };
 
-  const addTask = (newTask) => {
-    const taskObj = {
-      ...newTask,
-      id: `tsk-${Date.now()}`,
-      status: newTask.status || "Pending"
-    };
-    setTasks(prev => [taskObj, ...prev]);
+  const addTask = async (newTask) => {
+    try {
+      const res = await fetch(`${API_URL}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_id: newTask.eventId,
+          assigned_to: newTask.assignedToId || null,
+          title: newTask.title,
+          description: newTask.description || null,
+          due_date: newTask.dueDate || null,
+          status: mapTaskStatusToApi(newTask.status || 'Pending')
+        })
+      });
+      if (!res.ok) throw new Error('Failed to create task');
+      const taskObj = mapTaskFromApi(await res.json(), { priority: newTask.priority });
+      setTasks(prev => [taskObj, ...prev]);
 
-    addActivity({
-      title: "New task assigned",
-      description: `"${taskObj.title}" assigned to ${taskObj.assignedTo}`,
-      type: "task"
-    });
-    return taskObj;
-  };
-
-  const updateTaskStatus = (taskId, newStatus) => {
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
-    const target = tasks.find(t => t.id === taskId);
-    if (target) {
+      const assignee = staffDirectory.find(s => s.id === taskObj.assignedToId);
       addActivity({
-        title: "Task status changed",
-        description: `"${target.title}" moved to ${newStatus}`,
+        title: "New task assigned",
+        description: `"${taskObj.title}" assigned to ${assignee?.name || 'Unassigned'}`,
         type: "task"
       });
+      return taskObj;
+    } catch (err) {
+      console.error('addTask: could not reach the API, saving locally only:', err);
+      const taskObj = {
+        ...newTask,
+        id: `tsk-${Date.now()}`,
+        status: newTask.status || "Pending"
+      };
+      setTasks(prev => [taskObj, ...prev]);
+      return taskObj;
     }
   };
 
-  const deleteTask = (taskId) => {
+  const updateTask = async (taskId, form) => {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...form } : t));
+
+    try {
+      const res = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_id: form.eventId,
+          assigned_to: form.assignedToId || null,
+          title: form.title,
+          description: form.description || null,
+          due_date: form.dueDate || null,
+          status: mapTaskStatusToApi(form.status)
+        })
+      });
+      if (!res.ok) throw new Error('Failed to update task');
+      const taskObj = mapTaskFromApi(await res.json(), { priority: form.priority });
+      setTasks(prev => prev.map(t => t.id === taskId ? taskObj : t));
+    } catch (err) {
+      console.error('updateTask: could not reach the API, kept local change only:', err);
+    }
+  };
+
+  const updateTaskStatus = async (taskId, newStatus) => {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+    const target = tasks.find(t => t.id === taskId);
+    if (!target) return;
+
+    try {
+      const res = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_id: target.eventId,
+          assigned_to: target.assignedToId || null,
+          title: target.title,
+          description: target.description || null,
+          due_date: target.dueDate || null,
+          status: mapTaskStatusToApi(newStatus)
+        })
+      });
+      if (!res.ok) throw new Error('Failed to update task status');
+    } catch (err) {
+      console.error('updateTaskStatus: could not reach the API, kept local change only:', err);
+    }
+
+    addActivity({
+      title: "Task status changed",
+      description: `"${target.title}" moved to ${newStatus}`,
+      type: "task"
+    });
+  };
+
+  const deleteTask = async (taskId) => {
     setTasks(prev => prev.filter(t => t.id !== taskId));
+    try {
+      const res = await fetch(`${API_URL}/tasks/${taskId}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) throw new Error('Failed to delete task');
+    } catch (err) {
+      console.error('deleteTask: could not reach the API, removed locally only:', err);
+    }
   };
 
-  const addScheduleItem = (newItem) => {
-    const itemObj = {
-      ...newItem,
-      id: `sch-${Date.now()}`
-    };
-    setSchedule(prev => [...prev, itemObj].sort((a, b) => a.startTime.localeCompare(b.startTime)));
+  const addScheduleItem = async (newItem) => {
+    try {
+      const res = await fetch(`${API_URL}/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_id: newItem.eventId,
+          activity_title: newItem.activity,
+          start_time: toTimeDb(newItem.startTime),
+          end_time: toTimeDb(newItem.endTime),
+          notes: newItem.notes || null
+        })
+      });
+      if (!res.ok) throw new Error('Failed to create schedule entry');
+      const itemObj = mapScheduleFromApi(await res.json(), { location: newItem.location });
+      setSchedule(prev => [...prev, itemObj].sort((a, b) => a.startTime.localeCompare(b.startTime)));
 
-    addActivity({
-      title: "Schedule updated",
-      description: `Added "${itemObj.activity}" (${itemObj.startTime} - ${itemObj.endTime})`,
-      type: "schedule"
-    });
-    return itemObj;
+      addActivity({
+        title: "Schedule updated",
+        description: `Added "${itemObj.activity}" (${itemObj.startTime} - ${itemObj.endTime})`,
+        type: "schedule"
+      });
+      return itemObj;
+    } catch (err) {
+      console.error('addScheduleItem: could not reach the API, saving locally only:', err);
+      const itemObj = {
+        ...newItem,
+        id: `sch-${Date.now()}`
+      };
+      setSchedule(prev => [...prev, itemObj].sort((a, b) => a.startTime.localeCompare(b.startTime)));
+      return itemObj;
+    }
   };
 
-  const deleteScheduleItem = (itemId) => {
+  const deleteScheduleItem = async (itemId) => {
     setSchedule(prev => prev.filter(s => s.id !== itemId));
+    try {
+      const res = await fetch(`${API_URL}/schedule/${itemId}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) throw new Error('Failed to delete schedule entry');
+    } catch (err) {
+      console.error('deleteScheduleItem: could not reach the API, removed locally only:', err);
+    }
   };
 
-  const addFeedback = (newFb) => {
-    const fbObj = {
-      ...newFb,
-      id: `fb-${Date.now()}`,
-      date: new Date().toISOString().split('T')[0]
-    };
-    setFeedback(prev => [fbObj, ...prev]);
+  // Feedback needs a real guest_id — resolves (or creates) a guest by the
+  // typed name, since the form only collects a free-text name, not a
+  // guest selection.
+  const addFeedback = async (newFb) => {
+    try {
+      let guest = guestDirectory.find(g => g.name.toLowerCase() === newFb.guestName.toLowerCase());
 
-    addActivity({
-      title: "New feedback received",
-      description: `${fbObj.guestName} submitted a ${fbObj.rating}-star review`,
-      type: "feedback"
-    });
-    return fbObj;
+      if (!guest) {
+        const res = await fetch(`${API_URL}/guests`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newFb.guestName })
+        });
+        if (!res.ok) throw new Error('Failed to register guest for feedback');
+        guest = mapGuestFromApi(await res.json());
+        setGuestDirectory(prev => [...prev, guest]);
+      }
+
+      const res = await fetch(`${API_URL}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_id: newFb.eventId,
+          guest_id: guest.guestId,
+          rating: newFb.rating,
+          comment: newFb.comment
+        })
+      });
+      if (!res.ok) throw new Error('Failed to submit feedback');
+      const fbObj = mapFeedbackFromApi(await res.json());
+      setFeedbackRaw(prev => [fbObj, ...prev]);
+
+      addActivity({
+        title: "New feedback received",
+        description: `${guest.name} submitted a ${fbObj.rating}-star review`,
+        type: "feedback"
+      });
+      return { ...fbObj, guestName: guest.name };
+    } catch (err) {
+      console.error('addFeedback: could not reach the API, saving locally only:', err);
+      const fbObj = {
+        ...newFb,
+        id: `fb-${Date.now()}`,
+        date: new Date().toISOString().split('T')[0]
+      };
+      setFeedbackRaw(prev => [fbObj, ...prev]);
+      return fbObj;
+    }
   };
 
   // Persists to the real events.venue_id column via updateEvent — a venue's
@@ -553,12 +1143,60 @@ export function EventFlowProvider({ children }) {
     });
   };
 
-  // Vendor booking status is genuinely per-event (event_vendors table), not
-  // a field on the vendor itself, and this page has no event-selection step
-  // the way Venues does — so this stays a local-only demo toggle until a
-  // per-event vendor booking flow exists.
-  const updateVendorBooking = (vendorId, status) => {
-    setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, bookingStatus: status } : v));
+  // Hiring a vendor is genuinely per-event (event_vendors table), not a
+  // field on the vendor itself — these throw on failure so the calling UI
+  // can show a real error instead of pretending the booking landed.
+  const hireVendorForEvent = async (eventId, vendorId, agreedPrice, status = 'Pending') => {
+    const res = await fetch(`${API_URL}/events/${eventId}/vendors`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        vendor_id: vendorId,
+        agreed_price: Number(agreedPrice) || 0,
+        status: mapBookingStatusToApi(status)
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to hire vendor for this event');
+    }
+
+    const booking = mapEventVendorFromApi(await res.json());
+    setEventVendorBookings(prev => [booking, ...prev]);
+
+    const vend = vendors.find(v => v.id === vendorId);
+    const ev = events.find(e => e.id === eventId);
+    addActivity({
+      title: "Vendor hired",
+      description: `${vend?.name || 'Vendor'} hired for ${ev?.title || 'event'}`,
+      type: "vendor"
+    });
+
+    return booking;
+  };
+
+  const updateVendorEventBooking = async (eventId, vendorId, status) => {
+    const current = eventVendorBookings.find(b => b.eventId === eventId && b.vendorId === vendorId);
+
+    setEventVendorBookings(prev => prev.map(b =>
+      (b.eventId === eventId && b.vendorId === vendorId) ? { ...b, status } : b
+    ));
+
+    try {
+      const res = await fetch(`${API_URL}/events/${eventId}/vendors/${vendorId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agreed_price: current?.agreedPrice ?? 0,
+          status: mapBookingStatusToApi(status)
+        })
+      });
+      if (!res.ok) throw new Error('Failed to update vendor booking');
+    } catch (err) {
+      console.error('updateVendorEventBooking: could not reach the API, kept local change only:', err);
+    }
+
     const vend = vendors.find(v => v.id === vendorId);
     if (vend) {
       addActivity({
@@ -566,6 +1204,16 @@ export function EventFlowProvider({ children }) {
         description: `${vend.name} booking marked as ${status}`,
         type: "vendor"
       });
+    }
+  };
+
+  const removeVendorFromEvent = async (eventId, vendorId) => {
+    setEventVendorBookings(prev => prev.filter(b => !(b.eventId === eventId && b.vendorId === vendorId)));
+    try {
+      const res = await fetch(`${API_URL}/events/${eventId}/vendors/${vendorId}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) throw new Error('Failed to remove vendor booking');
+    } catch (err) {
+      console.error('removeVendorFromEvent: could not reach the API, removed locally only:', err);
     }
   };
 
@@ -928,6 +1576,32 @@ export function EventFlowProvider({ children }) {
     setActivities(prev => [newAct, ...prev.slice(0, 9)]);
   };
 
+  // Real planning-readiness percentages for one event, computed from actual
+  // venue/vendor/guest/task/schedule data instead of the old hardcoded
+  // per-event `progress` object (which never reflected anything real).
+  const getEventProgress = (eventId) => {
+    const ev = events.find(e => e.id === eventId);
+    const eventGuestsList = guests.filter(g => g.eventId === eventId);
+    const eventTasksList = visibleTasks.filter(t => t.eventId === eventId);
+    const eventScheduleList = visibleSchedule.filter(s => s.eventId === eventId);
+    const eventBookings = eventVendorBookings.filter(b => b.eventId === eventId);
+
+    const venue = ev?.venueId != null ? 100 : 0;
+    const vendorsPct = eventBookings.length
+      ? Math.round((eventBookings.filter(b => b.status === 'Confirmed').length / eventBookings.length) * 100)
+      : 0;
+    const guestsPct = eventGuestsList.length
+      ? Math.round((eventGuestsList.filter(g => g.rsvpStatus === 'Accepted').length / eventGuestsList.length) * 100)
+      : 0;
+    const tasksPct = eventTasksList.length
+      ? Math.round((eventTasksList.filter(t => t.status === 'Done').length / eventTasksList.length) * 100)
+      : 0;
+    const schedulePct = eventScheduleList.length > 0 ? 100 : 0;
+    const overall = Math.round((venue + vendorsPct + guestsPct + tasksPct + schedulePct) / 5);
+
+    return { venue, vendors: vendorsPct, guests: guestsPct, tasks: tasksPct, schedule: schedulePct, overall };
+  };
+
   const logout = () => {
     setIsAuthenticated(false);
     setAuthToken(null);
@@ -989,11 +1663,13 @@ export function EventFlowProvider({ children }) {
 
   // Real sign-up against the backend. Always creates an 'organizer' account —
   // Staff and Admin accounts are provisioned separately, not via public sign-up.
-  const registerWithApi = async (name, email, password) => {
+  // role: 'organizer' | 'staff' — the backend rejects anything else
+  // (including 'admin') and falls back to 'organizer' regardless.
+  const registerWithApi = async (name, email, password, role = 'organizer') => {
     const res = await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password })
+      body: JSON.stringify({ name, email, password, role })
     });
 
     const data = await res.json();
@@ -1005,13 +1681,13 @@ export function EventFlowProvider({ children }) {
     setRealUser(data.user);
     localStorage.setItem('eventflow_token', data.token);
     localStorage.setItem('eventflow_user', JSON.stringify(data.user));
-    setCurrentRole('organizer');
+    setCurrentRole(data.user.role === 'staff' ? 'staff' : 'organizer');
     setIsAuthenticated(true);
     localStorage.setItem('eventflow_authenticated', 'true');
 
     addActivity({
       title: 'Account created',
-      description: `${data.user.name} registered as an organizer`,
+      description: `${data.user.name} registered as ${data.user.role === 'staff' ? 'staff' : 'an organizer'}`,
       type: 'system'
     });
 
@@ -1047,9 +1723,14 @@ export function EventFlowProvider({ children }) {
         vendors,
         vendorsLoading,
         guests,
-        tasks,
-        schedule,
+        guestsLoading,
+        tasks: visibleTasks,
+        tasksLoading,
+        staffDirectory,
+        schedule: visibleSchedule,
+        scheduleLoading,
         feedback,
+        feedbackLoading,
         users,
         categories,
         categoriesLoading,
@@ -1064,19 +1745,24 @@ export function EventFlowProvider({ children }) {
         addGuest,
         updateGuestRSVP,
         addTask,
+        updateTask,
         updateTaskStatus,
         deleteTask,
         addScheduleItem,
         deleteScheduleItem,
         addFeedback,
         assignVenueToEvent,
-        updateVendorBooking,
+        eventVendorBookings,
+        hireVendorForEvent,
+        updateVendorEventBooking,
+        removeVendorFromEvent,
         addVenue,
         updateVenue,
         deleteVenue,
         addVendor,
         updateVendor,
         deleteVendor,
+        getEventProgress,
         addCategory,
         updateCategory,
         deleteCategory,

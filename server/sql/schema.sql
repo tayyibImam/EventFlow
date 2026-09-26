@@ -42,7 +42,8 @@ CREATE TABLE guests (
   guest_id INT PRIMARY KEY AUTO_INCREMENT,
   name VARCHAR(100) NOT NULL,
   email VARCHAR(150) NULL,
-  phone VARCHAR(20) NULL
+  phone VARCHAR(20) NULL,
+  description VARCHAR(255) NULL
 );
 
 -- ---- core record ----
@@ -83,6 +84,7 @@ CREATE TABLE event_guests (
   guest_id INT NOT NULL,
   rsvp_status ENUM('invited','accepted','declined','no_response') DEFAULT 'invited',
   invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  token VARCHAR(64) UNIQUE NULL,
   FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE,
   FOREIGN KEY (guest_id) REFERENCES guests(guest_id) ON DELETE CASCADE,
   UNIQUE (event_id, guest_id)

@@ -121,13 +121,19 @@ export default function Header({ onMenuClick, title, subtitle }) {
                 <span className="text-[11px] font-medium text-slate-400">{activities.length} updates</span>
               </div>
               <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
-                {activities.map((act) => (
-                  <div key={act.id} className="px-4 py-2.5 hover:bg-slate-50 transition-colors">
-                    <p className="text-xs font-semibold text-slate-800">{act.title}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{act.description}</p>
-                    <p className="text-[10px] text-[#7FB3D5] font-medium mt-1">{act.timestamp}</p>
-                  </div>
-                ))}
+                {activities.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6">
+                    No activity yet this session.
+                  </p>
+                ) : (
+                  activities.map((act) => (
+                    <div key={act.id} className="px-4 py-2.5 hover:bg-slate-50 transition-colors">
+                      <p className="text-xs font-semibold text-slate-800">{act.title}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{act.description}</p>
+                      <p className="text-[10px] text-[#7FB3D5] font-medium mt-1">{act.timestamp}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}

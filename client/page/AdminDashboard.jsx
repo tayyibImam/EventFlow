@@ -213,13 +213,19 @@ export default function AdminDashboard() {
             </div>
 
             <div className="mt-4 space-y-3">
-              {activities.slice(0, 4).map((a) => (
-                <div key={a.id} className="text-xs">
-                  <p className="font-bold text-slate-800">{a.title}</p>
-                  <p className="text-slate-500 text-[11px] mt-0.5">{a.description}</p>
-                  <span className="text-[10px] text-slate-400 mt-1 block">{a.timestamp}</span>
-                </div>
-              ))}
+              {activities.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">
+                  No activity yet this session.
+                </p>
+              ) : (
+                activities.slice(0, 4).map((a) => (
+                  <div key={a.id} className="text-xs">
+                    <p className="font-bold text-slate-800">{a.title}</p>
+                    <p className="text-slate-500 text-[11px] mt-0.5">{a.description}</p>
+                    <span className="text-[10px] text-slate-400 mt-1 block">{a.timestamp}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

@@ -19,7 +19,7 @@ import SearchBar from '../component/SearchBar';
 import FilterDropdown from '../component/FilterDropdown';
 
 export default function Events() {
-  const { events } = useEventFlow();
+  const { events, getEventProgress } = useEventFlow();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -166,7 +166,8 @@ export default function Events() {
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {filteredEvents.map((evt) => {
-                  const progressVal = typeof evt.progress === 'number' ? evt.progress : (evt.progress?.overall || 0);
+                  // Real readiness, not the stale placeholder baked into evt.progress.
+                  const progressVal = getEventProgress(evt.id).overall;
                   return (
                     <tr key={evt.id} className="hover:bg-slate-50 transition-colors">
                       <td className="py-4 px-4 sm:px-6 font-bold text-[#1B3A5C]">

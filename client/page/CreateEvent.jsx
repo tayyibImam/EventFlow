@@ -7,13 +7,13 @@ import Button from '../component/Button';
 
 export default function CreateEvent() {
   const navigate = useNavigate();
-  const { venues, categories, addEvent } = useEventFlow();
+  const { venues, categories, addEvent, currentProfile } = useEventFlow();
 
   const [formData, setFormData] = useState({
     title: '',
-    category: 'Conference',
+    category: '',
     description: '',
-    venue: 'Grand Convention Hall',
+    venue: '',
     startDate: '',
     endDate: '',
     expectedGuests: '250',
@@ -22,6 +22,7 @@ export default function CreateEvent() {
   });
 
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -31,7 +32,7 @@ export default function CreateEvent() {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     const newErrors = {};
@@ -44,34 +45,36 @@ export default function CreateEvent() {
       return;
     }
 
-    // Match venue ID if possible
+    // Resolve the picked names against the real venue/category lists —
+    // these selects are keyed by name, but the backend needs the real ids.
     const matchedVenue = venues.find(v => v.name === formData.venue);
+    const matchedCategory = categories.find(c => c.name === formData.category);
 
-    const created = addEvent({
+    setSubmitting(true);
+    const created = await addEvent({
       title: formData.title,
       category: formData.category,
-      description: formData.description || `Event planned by Meyadur Rahman for ${formData.expectedGuests} attendees.`,
-      venue: formData.venue,
-      venueId: matchedVenue ? matchedVenue.id : 'ven-1',
+      categoryId: matchedCategory ? matchedCategory.id : null,
+      description: formData.description || `Event planned by ${currentProfile.name} for ${formData.expectedGuests} attendees.`,
+      venue: matchedVenue ? matchedVenue.name : 'TBD',
+      venueId: matchedVenue ? matchedVenue.id : null,
       startDate: formData.startDate,
       endDate: formData.endDate || formData.startDate,
       expectedGuests: parseInt(formData.expectedGuests, 10) || 100,
       budget: formData.budget || '$15,000',
       status: formData.status
     });
+    setSubmitting(false);
 
-    navigate(`/events/${created.id}`);
+    if (created?.id != null) {
+      navigate(`/events/${created.id}`);
+    }
   };
 
   const categoryOptions = categories.map(c => ({ value: c.name, label: c.name }));
   const venueOptions = [
-    { value: "Grand Convention Hall", label: "Grand Convention Hall (Dhaka — Cap: 500)" },
-    { value: "Royal Crown Auditorium", label: "Royal Crown Auditorium (Gulshan — Cap: 400)" },
-    { value: "Lakeview Banquet Center", label: "Lakeview Banquet Center (Dhanmondi — Cap: 300)" },
-    { value: "Silicon Bay Tech Hub", label: "Silicon Bay Tech Hub (Banani — Cap: 150)" },
-    { value: "Summit Palace Ballroom", label: "Summit Palace Ballroom (Uttara — Cap: 650)" },
-    { value: "Emerald Garden Resort", label: "Emerald Garden Resort (Gazipur — Cap: 800)" },
-    { value: "TBD / To Be Decided", label: "TBD / Custom External Venue" }
+    { value: '', label: 'TBD / Assign Later' },
+    ...venues.map(v => ({ value: v.name, label: `${v.name} (${v.location} — Cap: ${v.capacity})` }))
   ];
 
   const statusOptions = [
@@ -134,6 +137,7 @@ export default function CreateEvent() {
               value={formData.status}
               onChange={handleChange}
               options={statusOptions}
+              helperText="Planned/Ongoing/Completed switch automatically based on the event dates — only Cancelled sticks."
             />
           </div>
 
@@ -238,8 +242,9 @@ export default function CreateEvent() {
               type="submit"
               variant="primary"
               icon={Check}
+              disabled={submitting}
             >
-              Create Event
+              {submitting ? 'Creating...' : 'Create Event'}
             </Button>
           </div>
         </form>
