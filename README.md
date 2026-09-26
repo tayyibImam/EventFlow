@@ -134,6 +134,7 @@ eventflow/
 ├── docs/
 │   ├── erd/                  # entity relationship diagram
 │   └── schema/                # database schema design doc
+├── package.json              # root dev convenience — runs client + server together
 └── README.md
 ```
 
@@ -147,18 +148,20 @@ eventflow/
 
 ### Installation
 
+`client/` and `server/` are independent packages with their own dependencies — the root `package.json` is just a convenience for running both dev servers together, not a workspace.
+
 ```bash
 # 1. Clone the repository
 git clone https://github.com/<your-org>/eventflow.git
 cd eventflow
 
-# 2. Install backend dependencies
-cd server
+# 2. Install client + server dependencies in one go
 npm install
+npm run install:all
 
-# 3. Install frontend dependencies
-cd ../client
-npm install
+# (equivalent to installing each separately)
+# cd server && npm install
+# cd ../client && npm install
 ```
 
 ### Database Setup
@@ -174,14 +177,21 @@ mysql -u root -p eventflow < server/sql/schema.sql
 ### Run Locally
 
 ```bash
-# Start the backend (from /server)
-npm run dev
-
-# Start the frontend (from /client)
+# From the repo root — runs client and server together
 npm run dev
 ```
 
-The frontend will run on `http://localhost:5173` (Vite default) and the backend API on `http://localhost:5000` (adjust as configured).
+This runs both dev servers concurrently (prefixed `client` / `server` output). To run them separately instead:
+
+```bash
+# Backend (from /server)
+npm run dev
+
+# Frontend (from /client)
+npm run dev
+```
+
+The frontend runs on `http://localhost:3000` and the backend API on `http://localhost:5000`.
 
 ## Environment Variables
 
@@ -206,6 +216,9 @@ VITE_API_BASE_URL=http://localhost:5000/api
 
 | Location | Command | Description |
 |---|---|---|
+| `/` (root) | `npm install` | Install the root dev dependency (`concurrently`) |
+| `/` (root) | `npm run install:all` | Install both `client/` and `server/` dependencies in one go |
+| `/` (root) | `npm run dev` | Run the client and server dev servers together |
 | `/client` | `npm run dev` | Run the React app in development mode |
 | `/client` | `npm run build` | Build the frontend for production |
 | `/server` | `npm run dev` | Run the Express API with hot reload |
