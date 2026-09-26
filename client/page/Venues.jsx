@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Building2, Plus, MapPin, Users, Check, Search, CalendarPlus } from 'lucide-react';
 import { useEventFlow } from '../context/EventFlowContext';
 import VenueCard from '../component/VenueCard';
@@ -8,7 +8,7 @@ import Button from '../component/Button';
 import Modal from '../component/Modal';
 
 export default function Venues() {
-  const { venues, events, assignVenueToEvent } = useEventFlow();
+  const { venues: rawVenues, events, assignVenueToEvent } = useEventFlow();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAvailability, setSelectedAvailability] = useState('All');
@@ -19,7 +19,23 @@ export default function Venues() {
   const [detailsModalVenue, setDetailsModalVenue] = useState(null);
 
   const availabilityOptions = ['All', 'Available', 'Booked'];
-  const bookingStatusOptions = ['All', 'Available', 'Selected', 'Confirmed', 'Cancelled'];
+  const bookingStatusOptions = ['All', 'Available', 'Confirmed'];
+
+  // A venue's booking status is derived live from events.venue_id, not a
+  // separately-mutated field on the venue — so it can never drift out of
+  // sync with what's actually assigned in the database.
+  const venues = useMemo(() => {
+    return rawVenues.map((v) => {
+      const assignedEvent = events.find((e) => e.venueId === v.id && e.status !== 'Cancelled');
+      return {
+        ...v,
+        bookingStatus: assignedEvent ? 'Confirmed' : 'Available',
+        availability: assignedEvent ? 'Booked' : 'Available',
+        assignedEventId: assignedEvent?.id,
+        assignedEventTitle: assignedEvent?.title
+      };
+    });
+  }, [rawVenues, events]);
 
   const filteredVenues = venues.filter((v) => {
     const matchesSearch = v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

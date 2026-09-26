@@ -35,9 +35,9 @@ export default function Sidebar({ isOpen, onClose }) {
           { name: 'Dashboard', path: '/admin', icon: LayoutDashboard },
           { name: 'Users', path: '/admin/users', icon: Users },
           { name: 'Event Categories', path: '/admin/categories', icon: FolderTree },
-          { name: 'All Events', path: '/events', icon: CalendarDays },
-          { name: 'Venues', path: '/venues', icon: MapPin },
-          { name: 'Vendors', path: '/vendors', icon: Store }
+          { name: 'All Events', path: '/admin/events', icon: CalendarDays },
+          { name: 'Venues', path: '/admin/venues', icon: MapPin },
+          { name: 'Vendors', path: '/admin/vendors', icon: Store }
         ];
       case 'staff':
         return [
@@ -120,8 +120,8 @@ export default function Sidebar({ isOpen, onClose }) {
             <nav className="space-y-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = location.pathname === item.path || 
-                  (item.path !== '/' && item.path !== '/dashboard' && location.pathname.startsWith(item.path));
+                const isActive = location.pathname === item.path ||
+                  (item.path !== '/' && item.path !== '/dashboard' && item.path !== '/admin' && location.pathname.startsWith(item.path));
 
                 return (
                   <NavLink

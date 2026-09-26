@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { Users, Plus, Shield, UserCheck, Mail, Phone, Edit2, Search } from 'lucide-react';
+import { Users, Plus, Shield, UserCheck, Mail, Phone, Pencil, Trash2, Search } from 'lucide-react';
 import { useEventFlow } from '../context/EventFlowContext';
 import SearchBar from '../component/SearchBar';
 import FilterDropdown from '../component/FilterDropdown';
 import Button from '../component/Button';
 import Modal from '../component/Modal';
+import ConfirmModal from '../component/ConfirmModal';
 import FormInput from '../component/FormInput';
 import StatusBadge from '../component/StatusBadge';
 
 export default function UsersPage() {
-  const { users, addUser, updateUserRole } = useEventFlow();
+  const { users, realUser, addUser, updateUser, updateUserRole, deleteUser } = useEventFlow();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('All');
@@ -24,7 +25,16 @@ export default function UsersPage() {
     assignedEvents: 'Tech Conference 2026'
   });
 
-  const roleOptions = ['All', 'Admin', 'Organizer', 'Staff', 'Guest'];
+  const [editingUser, setEditingUser] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', role: 'Staff' });
+  const [editError, setEditError] = useState('');
+  const [editSubmitting, setEditSubmitting] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  const roleOptions = ['All', 'Admin', 'Organizer', 'Staff'];
 
   const filteredUsers = users.filter((u) => {
     const matchesSearch = u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -47,6 +57,48 @@ export default function UsersPage() {
       assignedEvents: 'Tech Conference 2026'
     });
     setIsAddModalOpen(false);
+  };
+
+  const openEdit = (user) => {
+    setEditingUser(user);
+    setEditForm({ name: user.name, email: user.email, phone: user.phone || '', role: user.role });
+    setEditError('');
+    setEditSubmitting(false);
+  };
+
+  const closeEdit = () => setEditingUser(null);
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setEditError('');
+    if (!editForm.name || !editForm.email) {
+      setEditError('Name and email are required.');
+      return;
+    }
+
+    setEditSubmitting(true);
+    try {
+      await updateUser(editingUser.id, editForm);
+      closeEdit();
+    } catch (err) {
+      setEditError(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteError('');
+    setDeleting(true);
+    try {
+      await deleteUser(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (err) {
+      setDeleteError(err.message || 'Could not delete this user.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -103,7 +155,7 @@ export default function UsersPage() {
                 <th className="py-3.5 px-4">Role</th>
                 <th className="py-3.5 px-4">Assigned Events</th>
                 <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-4 text-right">Change Role</th>
+                <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -150,16 +202,44 @@ export default function UsersPage() {
                   </td>
 
                   <td className="py-4 px-4 text-right">
-                    <select
-                      value={user.role}
-                      onChange={(e) => updateUserRole(user.id, e.target.value)}
-                      className="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-md px-2 py-1 text-slate-800 focus:outline-none focus:border-[#1B3A5C] cursor-pointer"
-                    >
-                      <option value="Admin">Admin</option>
-                      <option value="Organizer">Organizer</option>
-                      <option value="Staff">Staff</option>
-                      <option value="Guest">Guest</option>
-                    </select>
+                    <div className="flex items-center justify-end gap-1.5">
+                      {user.role === 'Admin' ? (
+                        <span
+                          className="text-xs font-semibold bg-slate-100 border border-slate-200 rounded-md px-2 py-1 text-slate-400 cursor-not-allowed"
+                          title="Admin accounts are provisioned directly in the database and can't be changed here"
+                        >
+                          Admin (fixed)
+                        </span>
+                      ) : (
+                        <select
+                          value={user.role}
+                          onChange={(e) => updateUserRole(user.id, e.target.value)}
+                          className="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-md px-2 py-1 text-slate-800 focus:outline-none focus:border-[#1B3A5C] cursor-pointer"
+                          title="Quick role change"
+                        >
+                          <option value="Organizer">Organizer</option>
+                          <option value="Staff">Staff</option>
+                        </select>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => openEdit(user)}
+                        className="p-2 text-slate-500 hover:text-[#1B3A5C] hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                        aria-label={`Edit ${user.name}`}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setDeleteTarget(user); setDeleteError(''); }}
+                        disabled={realUser?.user_id === user.id}
+                        title={realUser?.user_id === user.id ? "You can't delete your own account" : undefined}
+                        className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-500"
+                        aria-label={`Delete ${user.name}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -208,7 +288,8 @@ export default function UsersPage() {
               type="select"
               value={form.role}
               onChange={(e) => setForm({ ...form, role: e.target.value })}
-              options={["Organizer", "Staff", "Guest", "Admin"]}
+              options={["Organizer", "Staff"]}
+              helperText="Admin accounts are provisioned directly in the database, not created here."
             />
 
             <FormInput
@@ -245,6 +326,75 @@ export default function UsersPage() {
           </div>
         </form>
       </Modal>
+
+      {/* Edit User Modal */}
+      <Modal
+        isOpen={!!editingUser}
+        onClose={closeEdit}
+        title="Edit User"
+        subtitle="Changes are saved directly to the platform database"
+      >
+        <form onSubmit={handleEditSubmit} className="space-y-4">
+          {editError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-semibold">
+              {editError}
+            </div>
+          )}
+
+          <FormInput
+            label="Full Name"
+            value={editForm.name}
+            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+            required
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormInput
+              label="Email Address"
+              type="email"
+              value={editForm.email}
+              onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+              required
+            />
+
+            <FormInput
+              label="Phone Number"
+              value={editForm.phone}
+              onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+            />
+          </div>
+
+          <FormInput
+            label="System Role"
+            type="select"
+            value={editForm.role}
+            onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+            options={editForm.role === 'Admin' ? ['Admin'] : ['Organizer', 'Staff']}
+            disabled={editForm.role === 'Admin'}
+            helperText={editForm.role === 'Admin' ? "Admin accounts are provisioned directly in the database and can't be reassigned here." : undefined}
+          />
+
+          <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={closeEdit} disabled={editSubmitting}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" disabled={editSubmitting}>
+              {editSubmitting ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete Confirmation */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        busy={deleting}
+        title="Delete this user?"
+        message={deleteTarget ? `"${deleteTarget.name}" will be permanently removed from the platform. This cannot be undone.` : ''}
+        error={deleteError}
+      />
     </div>
   );
 }

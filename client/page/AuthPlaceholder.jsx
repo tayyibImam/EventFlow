@@ -24,7 +24,7 @@ import { useEventFlow } from '../context/EventFlowContext';
 export default function AuthPlaceholder() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { login, loginWithApi, registerWithApi } = useEventFlow();
+  const { login, loginWithApi, registerWithApi, logout } = useEventFlow();
 
   // Check if redirected after signout
   const [justLoggedOut, setJustLoggedOut] = useState(Boolean(location.state?.loggedOut));
@@ -77,9 +77,6 @@ export default function AuthPlaceholder() {
     } else if (roleKey === 'guest') {
       setSignInEmail('farhan.ahmed@investor.io');
       setSignInPassword('GuestInvite2026!');
-    } else if (roleKey === 'admin') {
-      setSignInEmail('admin@eventflow.com');
-      setSignInPassword('password123');
     }
   };
 
@@ -107,13 +104,20 @@ export default function AuthPlaceholder() {
 
     try {
       const user = await loginWithApi(signInEmail, signInPassword);
+
+      // Admin accounts don't sign in here — this keeps the admin portal
+      // reachable only through its own dedicated login at /admin/login.
+      if (user.role === 'admin') {
+        logout();
+        setSignInError('Administrator accounts must sign in through the Admin Portal.');
+        return;
+      }
+
       setSignInSuccess(true);
       setJustLoggedOut(false);
 
       setTimeout(() => {
-        if (user.role === 'admin') {
-          navigate('/admin');
-        } else if (user.role === 'staff') {
+        if (user.role === 'staff') {
           navigate('/staff');
         } else {
           navigate('/dashboard');
@@ -313,7 +317,7 @@ export default function AuthPlaceholder() {
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">1-Click Setup</span>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
                 <button
                   type="button"
                   onClick={() => handleQuickFill('organizer')}
@@ -334,13 +338,6 @@ export default function AuthPlaceholder() {
                   className="px-2 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-semibold rounded-lg border border-slate-200 text-center transition-colors cursor-pointer"
                 >
                   Guest
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickFill('admin')}
-                  className="px-2 py-1.5 bg-white hover:bg-slate-100 text-amber-700 font-semibold rounded-lg border border-slate-200 text-center transition-colors cursor-pointer"
-                >
-                  Admin
                 </button>
               </div>
             </div>

@@ -1,27 +1,79 @@
 import React, { useState } from 'react';
-import { Tag, Plus, Calendar, Layers, Check } from 'lucide-react';
+import { Tag, Plus, Pencil, Trash2 } from 'lucide-react';
 import { useEventFlow } from '../context/EventFlowContext';
 import Button from '../component/Button';
 import Modal from '../component/Modal';
+import ConfirmModal from '../component/ConfirmModal';
 import FormInput from '../component/FormInput';
 
+const emptyForm = { name: '', description: '', color: '#1B3A5C' };
+
 export default function EventCategories() {
-  const { categories, events, addCategory } = useEventFlow();
+  const { categories, events, addCategory, updateCategory, deleteCategory } = useEventFlow();
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [form, setForm] = useState({
-    name: '',
-    description: '',
-    color: '#1B3A5C'
-  });
+  const [modalMode, setModalMode] = useState(null); // 'add' | 'edit' | null
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(emptyForm);
+  const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  const openAdd = () => {
+    setForm(emptyForm);
+    setFormError('');
+    setModalMode('add');
+  };
+
+  const openEdit = (cat) => {
+    setEditingId(cat.id);
+    setForm({ name: cat.name, description: cat.description || '', color: cat.color || '#1B3A5C' });
+    setFormError('');
+    setModalMode('edit');
+  };
+
+  const closeModal = () => {
+    setModalMode(null);
+    setEditingId(null);
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name.trim()) return;
+    setFormError('');
+    if (!form.name.trim()) {
+      setFormError('Category name is required.');
+      return;
+    }
 
-    addCategory(form);
-    setForm({ name: '', description: '', color: '#1B3A5C' });
-    setIsModalOpen(false);
+    setSubmitting(true);
+    try {
+      if (modalMode === 'edit') {
+        await updateCategory(editingId, form);
+      } else {
+        await addCategory(form);
+      }
+      closeModal();
+    } catch (err) {
+      setFormError(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteError('');
+    setDeleting(true);
+    try {
+      await deleteCategory(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (err) {
+      setDeleteError(err.message || 'Could not delete this category.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -41,7 +93,7 @@ export default function EventCategories() {
           id="btn-add-category"
           variant="gold"
           icon={Plus}
-          onClick={() => setIsModalOpen(true)}
+          onClick={openAdd}
         >
           Add Category
         </Button>
@@ -63,9 +115,27 @@ export default function EventCategories() {
                   <div className="w-10 h-10 rounded-xl bg-[#1B3A5C]/10 text-[#1B3A5C] flex items-center justify-center font-bold">
                     <Tag className="w-5 h-5" />
                   </div>
-                  <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
-                    {eventCount} {eventCount === 1 ? 'Event' : 'Events'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+                      {eventCount} {eventCount === 1 ? 'Event' : 'Events'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openEdit(cat)}
+                      className="p-1.5 text-slate-500 hover:text-[#1B3A5C] hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                      aria-label={`Edit ${cat.name}`}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setDeleteTarget(cat); setDeleteError(''); }}
+                      className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                      aria-label={`Delete ${cat.name}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <h3 className="text-base font-bold text-[#1B3A5C]">
@@ -86,14 +156,20 @@ export default function EventCategories() {
         })}
       </div>
 
-      {/* Add Category Modal */}
+      {/* Add/Edit Category Modal */}
       <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="Create New Event Category"
-        subtitle="Add a taxonomic event type available for all organizers"
+        isOpen={!!modalMode}
+        onClose={closeModal}
+        title={modalMode === 'edit' ? 'Edit Category' : 'Create New Event Category'}
+        subtitle={modalMode === 'edit' ? 'Changes are saved directly to the platform database' : 'Add a taxonomic event type available for all organizers'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          {formError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-semibold">
+              {formError}
+            </div>
+          )}
+
           <FormInput
             label="Category Name"
             value={form.name}
@@ -129,7 +205,8 @@ export default function EventCategories() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setIsModalOpen(false)}
+              onClick={closeModal}
+              disabled={submitting}
             >
               Cancel
             </Button>
@@ -137,12 +214,24 @@ export default function EventCategories() {
               type="submit"
               variant="primary"
               size="sm"
+              disabled={submitting}
             >
-              Save Category
+              {submitting ? 'Saving...' : modalMode === 'edit' ? 'Save Changes' : 'Save Category'}
             </Button>
           </div>
         </form>
       </Modal>
+
+      {/* Delete Confirmation */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        busy={deleting}
+        title="Delete this category?"
+        message={deleteTarget ? `"${deleteTarget.name}" will be permanently removed from the event taxonomy. Events already using it will keep their record but show as Uncategorized.` : ''}
+        error={deleteError}
+      />
     </div>
   );
 }

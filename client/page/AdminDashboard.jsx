@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ShieldAlert,
@@ -19,12 +19,30 @@ import StatusBadge from '../component/StatusBadge';
 import Button from '../component/Button';
 
 export default function AdminDashboard() {
-  const { events, venues, vendors, users, categories, activities } = useEventFlow();
-
+  const { events, adminStats, categories, activities, users, venues, vendors } = useEventFlow();
   const totalEvents = events.length;
   const totalVenues = venues.length;
   const totalVendors = vendors.length;
-  const totalUsers = users.length;
+  const totalUsers = adminStats.userCount ?? 0;
+  const plannedCount = events.filter((e) => e.status === 'Planned').length;
+
+  const venueNameById = useMemo(() => {
+    const map = {};
+    venues.forEach((v) => { map[v.id] = v.name; });
+    return map;
+  }, [venues]);
+
+  const categoryNameById = useMemo(() => {
+    const map = {};
+    categories.forEach((c) => { map[c.id] = c.name; });
+    return map;
+  }, [categories]);
+
+  const organizerNameById = useMemo(() => {
+    const map = {};
+    users.forEach((u) => { map[u.id] = u.name; });
+    return map;
+  }, [users]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
@@ -61,8 +79,8 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <DashboardCard
           title="Total Platform Events"
-          value="12"
-          subtitle="4 in active planning"
+          value={totalEvents.toString()}
+          subtitle={`${plannedCount} in active planning`}
           icon={Calendar}
           iconBg="bg-blue-50"
           iconColor="text-[#1B3A5C]"
@@ -109,7 +127,7 @@ export default function AdminDashboard() {
               </p>
             </div>
             <Link
-              to="/events"
+              to="/admin/events"
               className="text-xs font-semibold text-[#1B3A5C] hover:text-[#D4A537]"
             >
               All Events &rarr;
@@ -136,14 +154,14 @@ export default function AdminDashboard() {
                       </Link>
                     </td>
                     <td className="py-3 px-3 font-medium text-slate-600">
-                      {evt.organizer || "Meyadur Rahman"}
+                      {organizerNameById[evt.organizerId] || evt.organizer || '—'}
                     </td>
                     <td className="py-3 px-3 text-slate-500">
-                      {evt.venue}
+                      {venueNameById[evt.venueId] || evt.venue || 'TBD'}
                     </td>
                     <td className="py-3 px-3">
                       <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-700 font-semibold">
-                        {evt.category}
+                        {categoryNameById[evt.categoryId] || evt.category || 'Uncategorized'}
                       </span>
                     </td>
                     <td className="py-3 px-3">

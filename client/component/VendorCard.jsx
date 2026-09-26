@@ -37,11 +37,15 @@ export default function VendorCard({ vendor, onStatusChange }) {
 
         {/* Rating & Availability */}
         <div className="flex items-center gap-3 mt-2 text-xs">
-          <div className="flex items-center text-amber-500 font-bold">
-            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 mr-1" />
-            <span>{rating} / 5.0</span>
-          </div>
-          <span className="text-slate-300">•</span>
+          {rating != null && (
+            <>
+              <div className="flex items-center text-amber-500 font-bold">
+                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 mr-1" />
+                <span>{rating} / 5.0</span>
+              </div>
+              <span className="text-slate-300">•</span>
+            </>
+          )}
           <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-medium text-[11px]">
             {availability}
           </span>

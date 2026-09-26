@@ -23,9 +23,14 @@ import Invitations from '../page/Invitations';
 import AdminDashboard from '../page/AdminDashboard';
 import UsersPage from '../page/Users';
 import EventCategories from '../page/EventCategories';
+import AdminEvents from '../page/AdminEvents';
+import AdminVenues from '../page/AdminVenues';
+import AdminVendors from '../page/AdminVendors';
 import Settings from '../page/Settings';
 import Landing from '../page/Landing';
 import AuthPlaceholder from '../page/AuthPlaceholder';
+import AdminLogin from '../page/AdminLogin';
+import RequireAdmin from './RequireAdmin';
 
 export default function AppRoutes() {
   return (
@@ -50,11 +55,22 @@ export default function AppRoutes() {
         <Route path="/settings" element={<Settings />} />
       </Route>
 
-      {/* Admin Portal */}
-      <Route path="/admin" element={<AdminLayout />}>
+      {/* Admin Portal — separate login, gated behind a real admin session */}
+      <Route path="/admin/login" element={<AdminLogin />} />
+      <Route
+        path="/admin"
+        element={
+          <RequireAdmin>
+            <AdminLayout />
+          </RequireAdmin>
+        }
+      >
         <Route index element={<AdminDashboard />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="categories" element={<EventCategories />} />
+        <Route path="events" element={<AdminEvents />} />
+        <Route path="venues" element={<AdminVenues />} />
+        <Route path="vendors" element={<AdminVendors />} />
       </Route>
 
       {/* Staff Portal */}
