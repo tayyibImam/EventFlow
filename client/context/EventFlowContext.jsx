@@ -671,6 +671,27 @@ export function EventFlowProvider({ children }) {
     });
   }, [invitations, guestDirectory]);
 
+  // Resolves real category/venue names (mapEventFromApi only has the raw
+  // ids to work with) and computes real guest counts — kept as a separate
+  // layer on top of visibleEvents, rather than folded into it, because
+  // guests/invitations themselves depend on visibleEvents for scoping; doing
+  // the enrichment there would be a circular dependency.
+  const displayEvents = useMemo(() => {
+    return visibleEvents.map((evt) => {
+      const categoryMatch = categories.find((c) => String(c.id) === String(evt.categoryId));
+      const venueMatch = venues.find((v) => v.id === evt.venueId);
+      const eventGuestsList = guests.filter((g) => g.eventId === evt.id);
+
+      return {
+        ...evt,
+        category: categoryMatch ? categoryMatch.name : evt.category,
+        venue: venueMatch ? venueMatch.name : evt.venue,
+        expectedGuests: eventGuestsList.length,
+        confirmedGuests: eventGuestsList.filter((g) => g.rsvpStatus === 'Accepted').length
+      };
+    });
+  }, [visibleEvents, categories, venues, guests]);
+
   // feedback.guest_id is real, but the name lives on the guest directory —
   // joined here rather than baked into stored state to sidestep the
   // guests-not-loaded-yet race on first mount. Also scoped to the
@@ -1717,7 +1738,7 @@ export function EventFlowProvider({ children }) {
           : (currentProfile[currentRole] || currentProfile.organizer),
         allProfiles: currentProfile,
         eventsLoading,
-        events: visibleEvents,
+        events: displayEvents,
         venues,
         venuesLoading,
         vendors,

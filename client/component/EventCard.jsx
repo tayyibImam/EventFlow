@@ -23,7 +23,8 @@ export default function EventCard({ event }) {
     endDate,
     venue,
     status,
-    expectedGuests
+    expectedGuests,
+    confirmedGuests
   } = event;
 
   const formatDate = (dateStr) => {
@@ -72,7 +73,7 @@ export default function EventCard({ event }) {
           </div>
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-slate-400 shrink-0" />
-            <span>{expectedGuests} Confirmed / Expected Guests</span>
+            <span>{confirmedGuests} Confirmed / {expectedGuests} Invited</span>
           </div>
         </div>
 

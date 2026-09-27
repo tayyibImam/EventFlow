@@ -19,15 +19,14 @@ import SearchBar from '../component/SearchBar';
 import FilterDropdown from '../component/FilterDropdown';
 
 export default function Events() {
-  const { events, getEventProgress } = useEventFlow();
+  const { events, categories, getEventProgress } = useEventFlow();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
 
-  // Extract unique categories for filter
-  const categoryOptions = ['All', 'Conference', 'Cultural', 'Wedding', 'Corporate', 'Workshop', 'Seminar'];
+  const categoryOptions = ['All', ...categories.map(c => c.name)];
   const statusOptions = ['All', 'Planned', 'Ongoing', 'Completed', 'Cancelled'];
 
   const filteredEvents = events.filter((evt) => {
@@ -185,7 +184,7 @@ export default function Events() {
                         {formatDate(evt.startDate)}
                       </td>
                       <td className="py-4 px-4 text-xs font-medium text-slate-800">
-                        {evt.expectedGuests}
+                        {evt.confirmedGuests} / {evt.expectedGuests}
                       </td>
                       <td className="py-4 px-4">
                         <StatusBadge status={evt.status} size="sm" />
