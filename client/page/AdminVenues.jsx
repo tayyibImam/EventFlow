@@ -240,7 +240,7 @@ export default function AdminVenues() {
               required
             />
             <FormInput
-              label="Price Per Day (USD)"
+              label="Price Per Day (BDT)"
               type="number"
               value={form.pricePerDay}
               onChange={(e) => setForm({ ...form, pricePerDay: e.target.value })}

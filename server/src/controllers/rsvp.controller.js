@@ -4,10 +4,30 @@ const pool = require('../config/db');
 // URL (see eventGuests.controller.js's inviteGuest) is the only credential
 // a guest has, standing in for a real emailed invite link.
 
+// A guest who never responds is auto-declined once the event is less than a
+// day away — run as a lazy on-read sweep (there's no background job runner
+// in this app) rather than a real cron. Shared by the guest's own RSVP page
+// and the organizer-facing guest list (eventGuests.controller.js) so both
+// paths converge on the same cutoff regardless of which is hit first.
+async function autoDeclineStale(whereClause, params) {
+  await pool.query(
+    `UPDATE event_guests eg
+     JOIN events e ON e.event_id = eg.event_id
+     SET eg.rsvp_status = 'declined'
+     WHERE eg.rsvp_status IN ('invited', 'no_response')
+       AND e.start_datetime <= NOW() + INTERVAL 1 DAY
+       AND ${whereClause}`,
+    params
+  );
+}
+
 // GET /api/rsvp/:token — invitation + event + venue details for the guest landing page
 async function getInvitationByToken(req, res) {
   try {
     const { token } = req.params;
+
+    await autoDeclineStale('eg.token = ?', [token]);
+
     const [rows] = await pool.query(
       `SELECT
          eg.event_guest_id, eg.rsvp_status, eg.token,
@@ -87,4 +107,4 @@ async function submitFeedbackByToken(req, res) {
   }
 }
 
-module.exports = { getInvitationByToken, updateRsvpByToken, submitFeedbackByToken };
+module.exports = { getInvitationByToken, updateRsvpByToken, submitFeedbackByToken, autoDeclineStale };

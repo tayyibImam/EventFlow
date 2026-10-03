@@ -10,6 +10,7 @@ import {
   CheckSquare,
   Clock,
   MessageSquare,
+  ClipboardCheck,
   Settings,
   HelpCircle,
   FolderTree,
@@ -21,11 +22,20 @@ import {
 } from 'lucide-react';
 import { useEventFlow } from '../context/EventFlowContext';
 import LogoutModal from './LogoutModal';
+import HelpModal from './HelpModal';
+
+const SETTINGS_PATH_BY_ROLE = {
+  admin: '/admin/settings',
+  staff: '/staff/settings',
+  guest: '/guest/settings',
+  organizer: '/settings'
+};
 
 export default function Sidebar({ isOpen, onClose }) {
   const { currentRole, currentProfile } = useEventFlow();
   const location = useLocation();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
 
   // Define navigation links based on role
   const getNavItems = () => {
@@ -64,7 +74,8 @@ export default function Sidebar({ isOpen, onClose }) {
           { name: 'Guests', path: '/guests', icon: Users },
           { name: 'Tasks', path: '/tasks', icon: CheckSquare },
           { name: 'Schedule', path: '/schedule', icon: Clock },
-          { name: 'Feedback', path: '/feedback', icon: MessageSquare }
+          { name: 'Feedback', path: '/feedback', icon: MessageSquare },
+          { name: 'Staff Feedback', path: '/staff-feedback', icon: ClipboardCheck }
         ];
     }
   };
@@ -72,7 +83,7 @@ export default function Sidebar({ isOpen, onClose }) {
   const navItems = getNavItems();
 
   const additionalItems = [
-    { name: 'Settings', path: '/settings', icon: Settings },
+    { name: 'Settings', path: SETTINGS_PATH_BY_ROLE[currentRole] || '/settings', icon: Settings },
     { name: 'Help', path: '#help', icon: HelpCircle, isAction: true }
   ];
 
@@ -121,8 +132,12 @@ export default function Sidebar({ isOpen, onClose }) {
             <nav className="space-y-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
+                // Exact-match only for index-style root pages (/dashboard, /admin, /staff) —
+                // otherwise the startsWith fallback below would also mark them active on
+                // their own sub-routes (e.g. /staff/settings starts with /staff), double-
+                // highlighting them alongside the actually-active item (e.g. Settings).
                 const isActive = location.pathname === item.path ||
-                  (item.path !== '/' && item.path !== '/dashboard' && item.path !== '/admin' && location.pathname.startsWith(item.path));
+                  (item.path !== '/' && item.path !== '/dashboard' && item.path !== '/admin' && item.path !== '/staff' && location.pathname.startsWith(item.path));
 
                 return (
                   <NavLink
@@ -164,7 +179,7 @@ export default function Sidebar({ isOpen, onClose }) {
                     <button
                       key={item.name}
                       type="button"
-                      onClick={() => alert("EventFlow Help Center: Contact support@eventflow.app or refer to our Quickstart Guide.")}
+                      onClick={() => setShowHelpModal(true)}
                       className="w-full group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-all cursor-pointer text-left"
                     >
                       <div className="flex items-center gap-3">
@@ -231,6 +246,12 @@ export default function Sidebar({ isOpen, onClose }) {
       <LogoutModal
         isOpen={showLogoutModal}
         onClose={() => setShowLogoutModal(false)}
+      />
+
+      {/* Help Center Modal */}
+      <HelpModal
+        isOpen={showHelpModal}
+        onClose={() => setShowHelpModal(false)}
       />
     </>
   );

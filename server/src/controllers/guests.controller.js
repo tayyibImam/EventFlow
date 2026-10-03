@@ -1,5 +1,7 @@
 const pool = require('../config/db');
 
+const GUEST_TYPES = ['Normal', 'VIP', 'VVIP'];
+
 async function getAllGuests(req, res) {
   try {
     const [rows] = await pool.query('SELECT * FROM guests');
@@ -28,15 +30,19 @@ async function getGuestById(req, res) {
 
 async function createGuest(req, res) {
   try {
-    const { name, email, phone, description } = req.body;
+    const { name, email, phone, description, guest_type } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'name is required' });
     }
 
+    if (guest_type !== undefined && !GUEST_TYPES.includes(guest_type)) {
+      return res.status(400).json({ error: `guest_type must be one of: ${GUEST_TYPES.join(', ')}` });
+    }
+
     const [result] = await pool.query(
-      'INSERT INTO guests (name, email, phone, description) VALUES (?, ?, ?, ?)',
-      [name, email || null, phone || null, description || null]
+      'INSERT INTO guests (name, email, phone, description, guest_type) VALUES (?, ?, ?, ?, ?)',
+      [name, email || null, phone || null, description || null, guest_type || 'Normal']
     );
 
     const [newGuest] = await pool.query('SELECT * FROM guests WHERE guest_id = ?', [result.insertId]);
@@ -50,16 +56,20 @@ async function createGuest(req, res) {
 async function updateGuest(req, res) {
   try {
     const { id } = req.params;
-    const { name, email, phone, description } = req.body;
+    const { name, email, phone, description, guest_type } = req.body;
 
     const [existing] = await pool.query('SELECT * FROM guests WHERE guest_id = ?', [id]);
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Guest not found' });
     }
 
+    if (guest_type !== undefined && !GUEST_TYPES.includes(guest_type)) {
+      return res.status(400).json({ error: `guest_type must be one of: ${GUEST_TYPES.join(', ')}` });
+    }
+
     await pool.query(
-      'UPDATE guests SET name = ?, email = ?, phone = ?, description = ? WHERE guest_id = ?',
-      [name, email, phone, description, id]
+      'UPDATE guests SET name = ?, email = ?, phone = ?, description = ?, guest_type = ? WHERE guest_id = ?',
+      [name, email, phone, description, guest_type || existing[0].guest_type, id]
     );
 
     const [updated] = await pool.query('SELECT * FROM guests WHERE guest_id = ?', [id]);

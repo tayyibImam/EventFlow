@@ -53,7 +53,8 @@ export default function GuestTable({
                   rsvpStatus,
                   organization,
                   role,
-                  rsvpLink
+                  rsvpLink,
+                  guestType
                 } = guest;
 
                 return (
@@ -69,7 +70,12 @@ export default function GuestTable({
                           {name.split(' ').map(n => n[0]).slice(0, 2).join('')}
                         </div>
                         <div>
-                          <p className="font-semibold text-slate-900">{name}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-semibold text-slate-900">{name}</p>
+                            {(guestType === 'VIP' || guestType === 'VVIP') && (
+                              <StatusBadge status={guestType} size="sm" />
+                            )}
+                          </div>
                           <p className="text-xs text-slate-400 font-normal">
                             {role ? `${role} • ` : ''}{organization || 'Individual Delegate'}
                           </p>

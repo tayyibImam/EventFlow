@@ -118,7 +118,7 @@ export default function HeroSection() {
                 <div className="grid grid-cols-3 gap-3 border-t lg:border-t-0 lg:border-l border-slate-100 pt-3 lg:pt-0 lg:pl-6">
                   <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 text-center">
                     <p className="text-[10px] font-semibold text-slate-500 uppercase">Allocated Budget</p>
-                    <p className="text-sm font-extrabold text-[#1B3A5C]">$65,000</p>
+                    <p className="text-sm font-extrabold text-[#1B3A5C]">৳65,000</p>
                   </div>
                   <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 text-center">
                     <p className="text-[10px] font-semibold text-slate-500 uppercase">Target Attendees</p>

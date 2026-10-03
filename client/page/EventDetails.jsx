@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   Calendar,
@@ -21,7 +21,8 @@ import {
   Send,
   Star,
   Link2,
-  Check
+  Check,
+  Loader2
 } from 'lucide-react';
 import { useEventFlow } from '../context/EventFlowContext';
 import StatusBadge from '../component/StatusBadge';
@@ -34,6 +35,16 @@ import ScheduleTimeline from '../component/ScheduleTimeline';
 import FeedbackCard from '../component/FeedbackCard';
 import VendorCard from '../component/VendorCard';
 import VenueCard from '../component/VenueCard';
+
+// Inclusive calendar-day span of an event — mirrors the server's pricing
+// calc (server/src/controllers/bookings.controller.js) for display only;
+// the server recomputes and charges authoritatively.
+function dayCount(startDate, endDate) {
+  const start = new Date(String(startDate).split('T')[0]);
+  const end = new Date(String(endDate || startDate).split('T')[0]);
+  const days = Math.floor((end - start) / 86400000) + 1;
+  return Math.max(1, days);
+}
 
 export default function EventDetails() {
   const { id } = useParams();
@@ -54,10 +65,11 @@ export default function EventDetails() {
     deleteTask,
     addScheduleItem,
     deleteScheduleItem,
-    hireVendorForEvent,
+    initiateVendorBooking,
     updateVendorEventBooking,
     removeVendorFromEvent,
-    assignVenueToEvent,
+    checkVenueAvailability,
+    initiateVenueBooking,
     getEventProgress
   } = useEventFlow();
 
@@ -71,8 +83,15 @@ export default function EventDetails() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isVenueModalOpen, setIsVenueModalOpen] = useState(false);
+  const [venuePendingConfirm, setVenuePendingConfirm] = useState(null);
+  const [venueAvailability, setVenueAvailability] = useState(null); // { available, conflict } | null
+  const [checkingVenueAvailability, setCheckingVenueAvailability] = useState(false);
+  const [venueBookingError, setVenueBookingError] = useState('');
+  const [startingVenuePayment, setStartingVenuePayment] = useState(false);
+  const [pickerAvailability, setPickerAvailability] = useState({}); // venueId -> { available, conflict }
+  const [checkingPickerAvailability, setCheckingPickerAvailability] = useState(false);
   const [isHireVendorModalOpen, setIsHireVendorModalOpen] = useState(false);
-  const [hireVendorForm, setHireVendorForm] = useState({ vendorId: '', agreedPrice: '', status: 'Pending' });
+  const [hireVendorForm, setHireVendorForm] = useState({ vendorId: '' });
   const [hireVendorError, setHireVendorError] = useState('');
   const [hiringVendor, setHiringVendor] = useState(false);
   const [inviteLinkResult, setInviteLinkResult] = useState(null);
@@ -87,7 +106,8 @@ export default function EventDetails() {
     organization: '',
     role: 'Delegate',
     invitationStatus: 'Sent',
-    rsvpStatus: 'Accepted'
+    rsvpStatus: 'Accepted',
+    guestType: 'Normal'
   });
 
   const [taskForm, setTaskForm] = useState({
@@ -106,6 +126,33 @@ export default function EventDetails() {
     location: 'Main Hall',
     notes: ''
   });
+
+  // The picker only ever shows venues actually open for this event's exact
+  // dates — checked against every venue in the catalog up front, rather
+  // than letting the organizer pick a venue and find out it's booked only
+  // after clicking it (the conflict re-check in handleSelectVenue stays as
+  // a safety net against another booking landing between this check and
+  // the pay step). Guarded on `event` because this hook must run on every
+  // render (including the one before the event has loaded on a hard
+  // refresh) — it can't sit below the `if (!event) return` below it.
+  useEffect(() => {
+    if (!event || !isVenueModalOpen || venuePendingConfirm) return;
+    let cancelled = false;
+    setCheckingPickerAvailability(true);
+    Promise.all(
+      venues.map((v) =>
+        checkVenueAvailability(v.id, event.id)
+          .then((result) => [v.id, result])
+          .catch(() => [v.id, { available: true, conflict: null }])
+      )
+    ).then((entries) => {
+      if (cancelled) return;
+      setPickerAvailability(Object.fromEntries(entries));
+    }).finally(() => {
+      if (!cancelled) setCheckingPickerAvailability(false);
+    });
+    return () => { cancelled = true; };
+  }, [event?.id, isVenueModalOpen, venuePendingConfirm, venues]);
 
   if (!event) {
     return (
@@ -132,14 +179,14 @@ export default function EventDetails() {
     return {
       ...vendor,
       id: b.vendorId,
-      agreedPrice: `$${Number(b.agreedPrice).toLocaleString()}`,
+      agreedPrice: `৳${Number(b.agreedPrice).toLocaleString()}`,
       priceLabel: '(Agreed)',
       bookingStatus: b.status
     };
   });
   const hireableVendors = vendors.filter(v => !eventBookings.some(b => b.vendorId === v.id));
 
-  const currentVenue = venues.find(v => v.id === event.venueId || v.name === event.venue) || venues[0];
+  const currentVenue = venues.find(v => v.id === event.venueId || v.name === event.venue) || null;
   const progress = getEventProgress(event.id);
 
   // Guest stats
@@ -183,7 +230,8 @@ export default function EventDetails() {
       organization: '',
       role: 'Delegate',
       invitationStatus: 'Sent',
-      rsvpStatus: 'Accepted'
+      rsvpStatus: 'Accepted',
+      guestType: 'Normal'
     });
     setIsGuestModalOpen(false);
   };
@@ -224,28 +272,71 @@ export default function EventDetails() {
     setIsScheduleModalOpen(false);
   };
 
+  const closeVenueModal = () => {
+    setIsVenueModalOpen(false);
+    setVenuePendingConfirm(null);
+    setVenueAvailability(null);
+    setVenueBookingError('');
+    setPickerAvailability({});
+  };
+
+  // Picking a venue here doesn't assign it for free — it checks the venue
+  // is actually open for this event's dates and, if so, moves to the
+  // deposit confirmation step. events.venue_id is only ever set server-side
+  // once the SSLCommerz deposit payment is validated (see Venues.jsx for
+  // the same flow).
+  const handleSelectVenue = async (venue) => {
+    setVenuePendingConfirm(venue);
+    setVenueAvailability(null);
+    setVenueBookingError('');
+    setCheckingVenueAvailability(true);
+    try {
+      const result = await checkVenueAvailability(venue.id, event.id);
+      setVenueAvailability(result);
+    } catch (err) {
+      setVenueBookingError(err.message);
+    } finally {
+      setCheckingVenueAvailability(false);
+    }
+  };
+
+  const handleConfirmVenuePayment = async () => {
+    if (!venuePendingConfirm || venueAvailability?.available === false) return;
+    setVenueBookingError('');
+    setStartingVenuePayment(true);
+    try {
+      const { GatewayPageURL } = await initiateVenueBooking(venuePendingConfirm.id, event.id);
+      window.location.href = GatewayPageURL;
+    } catch (err) {
+      setVenueBookingError(err.message || 'Could not start the payment session.');
+      setStartingVenuePayment(false);
+    }
+  };
+
+
   const openHireVendorModal = () => {
-    setHireVendorForm({ vendorId: hireableVendors[0]?.id || '', agreedPrice: '', status: 'Pending' });
+    setHireVendorForm({ vendorId: hireableVendors[0]?.id || '' });
     setHireVendorError('');
     setIsHireVendorModalOpen(true);
   };
+
+  const selectedHireVendor = hireableVendors.find((v) => String(v.id) === String(hireVendorForm.vendorId)) || null;
 
   const handleHireVendorSubmit = async (e) => {
     e.preventDefault();
     setHireVendorError('');
 
-    if (!hireVendorForm.vendorId) {
+    if (!hireVendorForm.vendorId || !selectedHireVendor) {
       setHireVendorError('Select a vendor to hire.');
       return;
     }
 
     setHiringVendor(true);
     try {
-      await hireVendorForEvent(event.id, Number(hireVendorForm.vendorId), hireVendorForm.agreedPrice, hireVendorForm.status);
-      setIsHireVendorModalOpen(false);
+      const { GatewayPageURL } = await initiateVendorBooking(event.id, Number(hireVendorForm.vendorId), selectedHireVendor.basePrice);
+      window.location.href = GatewayPageURL;
     } catch (err) {
-      setHireVendorError(err.message || 'Could not hire this vendor. Please try again.');
-    } finally {
+      setHireVendorError(err.message || 'Could not start the payment session.');
       setHiringVendor(false);
     }
   };
@@ -319,7 +410,7 @@ export default function EventDetails() {
               />
             </div>
             <span className="text-[10px] text-slate-400 mt-2">
-              Budget Ref: {event.budget || "$45,000"}
+              Budget Ref: {event.budget || "৳45,000"}
             </span>
           </div>
         </div>
@@ -506,45 +597,65 @@ export default function EventDetails() {
               size="sm"
               onClick={() => setIsVenueModalOpen(true)}
             >
-              Change / Reassign Venue
+              {currentVenue ? 'Change / Reassign Venue' : 'Assign Venue'}
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <VenueCard
-              venue={currentVenue}
-              onAssign={() => setIsVenueModalOpen(true)}
-              onViewDetails={() => alert(`Venue specifications: Capacity ${currentVenue.capacity} guests. Contact: ${currentVenue.contactPerson}`)}
-            />
+          {currentVenue ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <VenueCard
+                venue={currentVenue}
+                onAssign={() => setIsVenueModalOpen(true)}
+                onViewDetails={() => alert(`Venue specifications: Capacity ${currentVenue.capacity} guests. Contact: ${currentVenue.contactPerson}`)}
+                assignLabel="Change Venue"
+              />
 
-            {/* Venue Floor Details Card */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
-              <div>
-                <h4 className="text-base font-bold text-[#1B3A5C] mb-3">
-                  Facility Logistics &amp; Rigging Specs
-                </h4>
-                <div className="space-y-3 text-xs text-slate-600">
-                  <div className="p-3 bg-slate-50 rounded-xl">
-                    <span className="font-bold text-slate-800 block">Stage Dimensions:</span>
-                    <span>40ft Width &times; 20ft Depth &times; 4ft Clearance with dual access ramps.</span>
-                  </div>
-                  <div className="p-3 bg-slate-50 rounded-xl">
-                    <span className="font-bold text-slate-800 block">Electrical &amp; Backup Power:</span>
-                    <span>3-Phase 100kVA automatic transfer generator for zero-downtime projection.</span>
-                  </div>
-                  <div className="p-3 bg-slate-50 rounded-xl">
-                    <span className="font-bold text-slate-800 block">Dedicated On-Site Manager:</span>
-                    <span>{currentVenue.contactPerson} ({currentVenue.phone})</span>
+              {/* Venue Floor Details Card */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
+                <div>
+                  <h4 className="text-base font-bold text-[#1B3A5C] mb-3">
+                    Facility Logistics &amp; Rigging Specs
+                  </h4>
+                  <div className="space-y-3 text-xs text-slate-600">
+                    <div className="p-3 bg-slate-50 rounded-xl">
+                      <span className="font-bold text-slate-800 block">Stage Dimensions:</span>
+                      <span>40ft Width &times; 20ft Depth &times; 4ft Clearance with dual access ramps.</span>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl">
+                      <span className="font-bold text-slate-800 block">Electrical &amp; Backup Power:</span>
+                      <span>3-Phase 100kVA automatic transfer generator for zero-downtime projection.</span>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl">
+                      <span className="font-bold text-slate-800 block">Dedicated On-Site Manager:</span>
+                      <span>{currentVenue.contactPerson} ({currentVenue.phone})</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="text-slate-500">Booking Status:</span>
-                <StatusBadge status={currentVenue.bookingStatus} size="sm" />
+                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <span className="text-slate-500">Booking Status:</span>
+                  <StatusBadge status="Confirmed" size="sm" />
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-10 text-center">
+              <Building className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-slate-700">No venue assigned yet</h4>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                This event doesn't have a venue booked. Assign one from the venues available for {event.startDate?.slice(0, 10)}
+                {event.endDate && event.endDate !== event.startDate ? ` to ${event.endDate.slice(0, 10)}` : ''} — the venue only locks in once the confirmation deposit clears.
+              </p>
+              <Button
+                variant="primary"
+                size="sm"
+                className="mt-4"
+                onClick={() => setIsVenueModalOpen(true)}
+              >
+                Assign Venue
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -775,6 +886,18 @@ export default function EventDetails() {
             onChange={(e) => setGuestForm({ ...guestForm, description: e.target.value })}
             placeholder="Dietary requirements, accessibility notes, VIP handling instructions..."
           />
+          <FormInput
+            label="Guest Type"
+            type="select"
+            value={guestForm.guestType}
+            onChange={(e) => setGuestForm({ ...guestForm, guestType: e.target.value })}
+            options={["Normal", "VIP", "VVIP"]}
+          />
+          {(guestForm.guestType === 'VIP' || guestForm.guestType === 'VVIP') && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800">
+              Once this guest accepts, admin will see an alert on the dashboard so the venue authority can be looped in for special handling.
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <FormInput
               label="RSVP Status"
@@ -927,34 +1050,95 @@ export default function EventDetails() {
       {/* Modal: Change Venue */}
       <Modal
         isOpen={isVenueModalOpen}
-        onClose={() => setIsVenueModalOpen(false)}
+        onClose={closeVenueModal}
         title="Assign Venue"
-        subtitle={`Select a convention center for ${event.title}`}
+        subtitle={venuePendingConfirm ? `Confirm "${venuePendingConfirm.name}"` : `Select a convention center for ${event.title}`}
       >
-        <div className="space-y-3">
-          {venues.map((v) => (
-            <div
-              key={v.id}
-              className="p-3.5 rounded-xl border border-slate-200 hover:border-[#1B3A5C] bg-white transition-all flex items-center justify-between"
-            >
-              <div>
-                <p className="font-bold text-slate-800 text-sm">{v.name}</p>
-                <p className="text-xs text-slate-500">{v.location} &bull; Capacity: {v.capacity} guests</p>
-                <span className="text-[11px] font-semibold text-[#1B3A5C]">{v.planningPrice}</span>
+        {!venuePendingConfirm ? (
+          checkingPickerAvailability ? (
+            <div className="flex items-center gap-2 text-xs text-slate-500 py-6 justify-center">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Checking which venues are free for these dates...
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {venues.filter((v) => pickerAvailability[v.id]?.available !== false).length === 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800">
+                  No venues are available for these dates. Every venue in the catalog is already booked over {event.startDate?.slice(0, 10)}
+                  {event.endDate && event.endDate !== event.startDate ? `–${event.endDate.slice(0, 10)}` : ''}.
+                </div>
+              )}
+              {venues
+                .filter((v) => pickerAvailability[v.id]?.available !== false)
+                .map((v) => (
+                  <div
+                    key={v.id}
+                    className="p-3.5 rounded-xl border border-slate-200 hover:border-[#1B3A5C] bg-white transition-all flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="font-bold text-slate-800 text-sm">{v.name}</p>
+                      <p className="text-xs text-slate-500">{v.location} &bull; Capacity: {v.capacity} guests</p>
+                      <span className="text-[11px] font-semibold text-[#1B3A5C]">{v.planningPrice}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={v.name === event.venue ? "outline" : "primary"}
+                      disabled={v.name === event.venue}
+                      onClick={() => handleSelectVenue(v)}
+                    >
+                      {v.name === event.venue ? "Current Venue" : "Select Venue"}
+                    </Button>
+                  </div>
+                ))}
+            </div>
+          )
+        ) : (
+          <div className="space-y-4">
+            {checkingVenueAvailability && (
+              <p className="text-xs text-slate-500">Checking availability for these dates...</p>
+            )}
+
+            {!checkingVenueAvailability && venueAvailability?.available === false && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800">
+                Already booked by "{venueAvailability.conflict.eventTitle}" ({venueAvailability.conflict.startDate} to {venueAvailability.conflict.endDate}). Pick a different venue.
               </div>
+            )}
+
+            {!checkingVenueAvailability && venueAvailability?.available && (
+              <div className="p-3 bg-sky-50 border border-sky-200/70 rounded-xl text-xs text-[#1B3A5C] space-y-1">
+                <div className="flex justify-between">
+                  <span>Total venue price</span>
+                  <strong>৳{(Number(venuePendingConfirm.pricePerDay) * dayCount(event.startDate, event.endDate)).toLocaleString()}</strong>
+                </div>
+                <div className="flex justify-between font-bold">
+                  <span>Confirmation deposit due now (10%)</span>
+                  <strong>৳{(Math.round(Number(venuePendingConfirm.pricePerDay) * dayCount(event.startDate, event.endDate) * 0.10 * 100) / 100).toLocaleString()}</strong>
+                </div>
+                <p className="text-[11px] text-slate-500 pt-1">You'll be redirected to SSLCommerz to pay the deposit. The venue is only locked in once payment clears.</p>
+              </div>
+            )}
+
+            {venueBookingError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800">
+                {venueBookingError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setVenuePendingConfirm(null); setVenueAvailability(null); }}>
+                Back
+              </Button>
               <Button
                 size="sm"
-                variant={v.name === event.venue ? "outline" : "primary"}
-                onClick={() => {
-                  assignVenueToEvent(v.id, event.id);
-                  setIsVenueModalOpen(false);
-                }}
+                variant="primary"
+                disabled={checkingVenueAvailability || venueAvailability?.available === false || startingVenuePayment}
+                onClick={handleConfirmVenuePayment}
               >
-                {v.name === event.venue ? "Current Venue" : "Select Venue"}
+                {startingVenuePayment ? 'Redirecting to payment...' : 'Pay Deposit & Confirm'}
               </Button>
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </Modal>
 
       {/* Modal: Hire Vendor */}
@@ -992,22 +1176,13 @@ export default function EventDetails() {
                 </select>
               </div>
 
-              <FormInput
-                label="Agreed Price (USD)"
-                type="number"
-                value={hireVendorForm.agreedPrice}
-                onChange={(e) => setHireVendorForm({ ...hireVendorForm, agreedPrice: e.target.value })}
-                placeholder="e.g. 12500"
-                required
-              />
-
-              <FormInput
-                label="Initial Status"
-                type="select"
-                value={hireVendorForm.status}
-                onChange={(e) => setHireVendorForm({ ...hireVendorForm, status: e.target.value })}
-                options={['Pending', 'Confirmed']}
-              />
+              <div className="p-3 bg-sky-50 border border-sky-200/70 rounded-xl text-xs text-[#1B3A5C] space-y-1">
+                <div className="flex justify-between font-bold">
+                  <span>Full payment due now</span>
+                  <strong>৳{(Number(selectedHireVendor?.basePrice) || 0).toLocaleString()}</strong>
+                </div>
+                <p className="text-[11px] text-slate-500 pt-1">You'll be redirected to SSLCommerz to pay the vendor in full. The vendor is only hired for this event once payment clears.</p>
+              </div>
             </>
           )}
 
@@ -1016,7 +1191,7 @@ export default function EventDetails() {
               Cancel
             </Button>
             <Button type="submit" variant="primary" size="sm" disabled={hiringVendor || hireableVendors.length === 0}>
-              {hiringVendor ? 'Hiring...' : 'Hire Vendor'}
+              {hiringVendor ? 'Redirecting to payment...' : 'Pay & Hire Vendor'}
             </Button>
           </div>
         </form>

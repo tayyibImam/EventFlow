@@ -29,6 +29,7 @@ Plan, coordinate, and track an event from start to finish — venues, vendors, g
 - [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
 - [Available Scripts](#available-scripts)
+- [Troubleshooting](#troubleshooting)
 - [Deployment](#deployment)
 - [Roadmap](#roadmap)
 - [Team](#team)
@@ -60,6 +61,9 @@ EventFlow solves this by bringing venues, vendors, guests, tasks, and schedules 
 - **Task Management** — Create planning tasks, assign them to staff, set due dates, and track status (`pending`, `in_progress`, `done`).
 - **Event Schedule / Agenda** — Build a simple timeline of event-day activities with start/end times and notes per segment.
 - **Guest Feedback** — After the event, guests can rate their experience (1–5) and leave a comment.
+- **Email Invites** — Guests get a branded HTML invite email (event name, date, time, venue, and a direct RSVP link); without real SMTP credentials configured it still "sends" via a console-logged preview link.
+- **Venue & Vendor Payments** — Venue bookings take a 10% deposit and vendor hires are paid in full, both through SSLCommerz (sandbox-ready, no real money needed for local dev).
+- **Staff Task Feedback** — Staff can leave a progress or completion note on their own tasks; organizers review every note on a dedicated tab and mark it read.
 
 ## User Roles
 
@@ -76,14 +80,14 @@ EventFlow solves this by bringing venues, vendors, guests, tasks, and schedules 
 |---|---|
 | **Frontend** | React.js, HTML5, CSS3, Tailwind CSS |
 | **Backend** | Node.js with Express.js (REST API) |
-| **Database** | MySQL 8.0+ — 11-table, 3NF relational schema |
+| **Database** | MySQL 8.0+ — 14-table, 3NF relational schema |
 | **UI / UX Design** | Figma — wireframes, UI kit, high-fidelity prototypes |
 | **Version Control** | GitHub — repository, branches, pull requests, project board |
 | **Deployment** | Vercel (frontend + CI/CD) |
 
 ## Database Schema
 
-The system is built around **11 tables** in a simple, relational MySQL schema kept intentionally lean — no ticketing, no payments, no permissions or audit tables. The `events` table sits at the center of the schema; every other table connects back to it, either directly (1:M) or through a junction table (M:N).
+The system is built around a relational MySQL schema, now **14 tables** (`server/sql/schema.sql` is the source of truth — it's grown since the diagram below was drawn, adding `task_feedback` for staff progress/completion notes, plus `venue_bookings`/`vendor_bookings` as the SSLCommerz payment ledger behind venue deposits and vendor hires). The `events` table sits at the center of the schema; every other table connects back to it, either directly (1:M) or through a junction table (M:N).
 
 <div align="center">
   <img src="docs/erd/EventFlow_ERD.png" alt="EventFlow Entity Relationship Diagram" width="800">
@@ -111,30 +115,34 @@ Full column-level definitions (types, constraints, foreign keys) live in [`docs/
 
 ## Project Structure
 
+The actual layout is a little different from a typical Vite scaffold — most of the frontend app code sits *next to* `client/src/`, not inside it (a side effect of this project starting from a Google AI Studio template; see [`client/README.md`](client/README.md) for the full note):
+
 ```
 eventflow/
-├── client/                  # React frontend
-│   ├── public/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── hooks/
-│   │   ├── api/              # API client wrapper
-│   │   └── App.jsx
+├── client/                   # React frontend (Vite)
+│   ├── src/                   # just the entry point: main.tsx, App.tsx, index.css
+│   ├── context/                # EventFlowContext.jsx — the single global store (auth + all domains)
+│   ├── routes/                  # AppRoutes.jsx + route guards (RequireAdmin, RequireRoleOrDemo)
+│   ├── layout/                   # DashboardLayout/AdminLayout/StaffLayout/GuestLayout
+│   ├── page/                      # one file per screen (Dashboard, Events, Tasks, AdminUsers, ...)
+│   ├── component/                  # shared UI pieces (Sidebar, Header, Modal, TaskCard, ...)
+│   ├── data/                        # mockData.js — fallback data for domains with no backend-only history
 │   └── package.json
-├── server/                  # Express backend
+├── server/                   # Express backend (CommonJS)
+│   ├── server.js               # entry point — wires middleware + mounts every /api/* route
 │   ├── src/
-│   │   ├── routes/
-│   │   ├── controllers/
-│   │   ├── models/
-│   │   ├── middleware/
-│   │   └── config/db.js
-│   ├── sql/                  # schema.sql, seed data
+│   │   ├── routes/               # one *.routes.js per resource
+│   │   ├── controllers/          # one *.controller.js per resource — raw parameterized SQL, no ORM
+│   │   ├── services/             # sslcommerz.service.js
+│   │   ├── middleware/           # auth.middleware.js (verifyToken)
+│   │   ├── utils/                # emailTemplates.js — shared branded HTML email layout
+│   │   └── config/               # db.js (mysql2 pool), mailer.js (Nodemailer)
+│   ├── sql/                    # schema.sql, seed.sql
 │   └── package.json
 ├── docs/
 │   ├── erd/                  # entity relationship diagram
 │   └── schema/                # database schema design doc
-├── package.json              # root dev convenience — runs client + server together
+├── package.json              # root dev convenience — runs client + server together, not a workspace
 └── README.md
 ```
 
@@ -142,71 +150,114 @@ eventflow/
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) v18+
-- [MySQL](https://www.mysql.com/) 8.0+
-- npm or yarn
+- [Node.js](https://nodejs.org/) v18+ (v20 LTS recommended)
+- [MySQL](https://www.mysql.com/) 8.0+ Server, running locally (or reachable), with the `mysql` command-line client available
+- npm (ships with Node — `client/` and `server/` are independent packages with their own lockfiles, not an npm workspace, so each gets installed separately; `npm run install:all` below does this for you)
+- Optional, only if you want to test them: an SMTP account (e.g. Gmail) for real invite emails, and a free [SSLCommerz sandbox account](https://developer.sslcommerz.com/registration/) for the venue/vendor payment flow — both are skippable and the app still runs fully without them (see [Environment Variables](#environment-variables))
 
-### Installation
-
-`client/` and `server/` are independent packages with their own dependencies — the root `package.json` is just a convenience for running both dev servers together, not a workspace.
+### 1. Clone and install dependencies
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/<your-org>/eventflow.git
-cd eventflow
+git clone https://github.com/tayyibImam/EventFlow.git
+cd EventFlow
 
-# 2. Install client + server dependencies in one go
-npm install
-npm run install:all
-
-# (equivalent to installing each separately)
-# cd server && npm install
-# cd ../client && npm install
+npm install          # installs the root dev dependency (concurrently)
+npm run install:all  # installs client/ and server/ dependencies
 ```
 
-### Database Setup
+### 2. Create the MySQL database
+
+Make sure your MySQL server is running, then create the `eventflow` database and load the schema. Pick the block for your shell:
+
+**macOS / Linux / Git Bash on Windows:**
 
 ```bash
-# Create the database
-mysql -u root -p -e "CREATE DATABASE eventflow;"
-
-# Import the schema
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS eventflow;"
 mysql -u root -p eventflow < server/sql/schema.sql
+mysql -u root -p eventflow < server/sql/seed.sql
 ```
 
-### Run Locally
+**Windows PowerShell:**
+
+```powershell
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS eventflow;"
+Get-Content server\sql\schema.sql | mysql -u root -p eventflow
+Get-Content server\sql\seed.sql | mysql -u root -p eventflow
+```
+
+> PowerShell doesn't support `<` for input redirection (it's a reserved operator there) — use `Get-Content file | mysql ...` as shown, or run the macOS/Linux commands above from Git Bash instead.
+
+Each `mysql` call prompts for your MySQL root password interactively. If `mysql` isn't recognized as a command, either add MySQL's `bin` folder to your PATH (on Windows, typically `C:\Program Files\MySQL\MySQL Server 8.0\bin`) and restart your terminal, or call the full path to `mysql.exe`/`mysql` instead.
+
+`schema.sql` creates all 14 tables. `seed.sql` truncates them first (safe on a freshly-created database) and inserts a small set of demo data — 3 user accounts, 2 categories, a venue, a vendor, 2 guests, 1 event, and 1 task — so the app has something to show immediately and so you can log in right away (see [step 5](#5-log-in) below). You can skip the `seed.sql` step if you'd rather start from a completely empty database.
+
+### 3. Configure the server's environment variables
 
 ```bash
-# From the repo root — runs client and server together
-npm run dev
+cd server
+cp .env.example .env
 ```
 
-This runs both dev servers concurrently (prefixed `client` / `server` output). To run them separately instead:
+(Windows PowerShell: `Copy-Item .env.example .env`)
+
+Open `server/.env` and fill in at least `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` to match what you used in step 2, then add a `JWT_SECRET` — see [Environment Variables](#environment-variables) for the full list and what's actually required.
+
+### 4. Run it
 
 ```bash
-# Backend (from /server)
-npm run dev
-
-# Frontend (from /client)
+# from the repo root — starts client (Vite) and server (Express) together
 npm run dev
 ```
 
-The frontend runs on `http://localhost:3000` and the backend API on `http://localhost:5000`.
+Wait for both the server's `Server running on port 5000` line and Vite's "ready" message in the terminal (prefixed `client` / `server`), then open **http://localhost:3000**. To run them separately instead: `npm run dev` inside `server/`, and `npm run dev` inside `client/`.
+
+### 5. Log in
+
+If you ran `seed.sql` in step 2, three accounts are ready to use — **the password for all three is `password123`**:
+
+| Role | Email | Password | Sign in at |
+|---|---|---|---|
+| Admin | `admin@eventflow.com` | `password123` | http://localhost:3000/admin/login |
+| Organizer | `organizer@eventflow.com` | `password123` | http://localhost:3000/signin |
+| Staff | `staff@eventflow.com` | `password123` | http://localhost:3000/signin |
+
+A few things worth knowing:
+
+- Only `events` and `auth` (login/register) are backed by the real MySQL database end-to-end; every other section (venues, vendors, guests, tasks, schedule, feedback) falls back to local browser demo data if the API can't be reached — so the app still renders and feels "working" even if MySQL isn't actually running, just without real persistence. Check the `server` terminal output if something seems off.
+- No login required to look around: the landing page's role switcher (demo/perspective mode) lets you preview the Organizer, Admin, Staff, and Guest views without any account at all.
+- Public sign-up (the "Sign Up" form, `POST /api/auth/register`) always creates an `organizer` (or `staff`, if selected) account — it can never create an `admin` account. Admin/staff accounts only come from `seed.sql` or by inserting a row into `users` directly.
 
 ## Environment Variables
 
-Create a `.env` file in `/server` (never commit this file):
+### Server — `server/.env`
 
-```env
-PORT=5000
-DB_HOST=localhost
-DB_USER=root
-DB_PASSWORD=your_password
-DB_NAME=eventflow
-JWT_SECRET=your_jwt_secret
+Copied from `server/.env.example` in step 3 above. **Never commit this file.**
+
+| Variable | Required? | Notes |
+|---|---|---|
+| `PORT` | Optional | Defaults to `5000`. |
+| `DB_HOST` | **Required** | e.g. `localhost`. |
+| `DB_USER` | **Required** | e.g. `root`. |
+| `DB_PASSWORD` | **Required** | Your local MySQL password (an empty value is fine if your local root account has no password). |
+| `DB_NAME` | **Required** | `eventflow`, or whatever you named it in [step 2](#2-create-the-mysql-database). |
+| `JWT_SECRET` | **Required** | Deliberately **not** in `.env.example` — add it yourself (see below). Without it, login, sign-up, and admin login all fail with a server error. |
+| `CLIENT_URL` | Optional | Defaults to `http://localhost:3000`. Used to build the `/rsvp/:token` link emailed to guests. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Optional | Leave unset and guest invite emails still "send" via a throwaway Ethereal test inbox — the server console prints a preview link for each one. Set real credentials (e.g. Gmail SMTP on port 587 with an [App Password](https://support.google.com/accounts/answer/185833) as `SMTP_PASS`) to deliver actual email. |
+| `SSLCZ_STORE_ID`, `SSLCZ_STORE_PASSWORD` | Optional | Only needed to actually complete the venue-deposit / vendor-hire payment flow. Get free sandbox credentials at [developer.sslcommerz.com](https://developer.sslcommerz.com/registration/). Without them, everything else in the app still works — only "Pay & Book" actions are affected. |
+| `SSLCZ_IS_LIVE` | Optional | Defaults to `false` (sandbox mode). |
+| `SERVER_URL` | Optional | Defaults to `http://localhost:5000`. Must be reachable by the browser for SSLCommerz's success/fail/cancel redirects — `localhost` is fine for local dev. |
+
+**Generating a `JWT_SECRET`:** any random string works for local dev —
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-Create a `.env` file in `/client`:
+Paste the output into `server/.env` as `JWT_SECRET=<the generated value>`.
+
+### Client — `client/.env` (optional)
+
+Only needed if your backend isn't running at the default `http://localhost:5000` — the app already falls back to that if this isn't set:
 
 ```env
 VITE_API_BASE_URL=http://localhost:5000/api
@@ -219,10 +270,21 @@ VITE_API_BASE_URL=http://localhost:5000/api
 | `/` (root) | `npm install` | Install the root dev dependency (`concurrently`) |
 | `/` (root) | `npm run install:all` | Install both `client/` and `server/` dependencies in one go |
 | `/` (root) | `npm run dev` | Run the client and server dev servers together |
-| `/client` | `npm run dev` | Run the React app in development mode |
+| `/client` | `npm run dev` | Run the React app in development mode (Vite, pinned to port 3000) |
 | `/client` | `npm run build` | Build the frontend for production |
-| `/server` | `npm run dev` | Run the Express API with hot reload |
-| `/server` | `npm start` | Run the Express API in production mode |
+| `/client` | `npm run lint` | Type-checks the frontend (`tsc --noEmit`) — there's no ESLint configured, despite the name |
+| `/server` | `npm run dev` | Run the Express API with hot reload (nodemon, port 5000 by default) |
+| `/server` | `npm start` | Run the Express API without hot reload |
+| `/server` | `npm test` | Unimplemented stub — exits immediately; there's no automated test suite yet |
+
+## Troubleshooting
+
+- **`Error: connect ECONNREFUSED` / `ER_ACCESS_DENIED_ERROR` in the server terminal, or events never load** — MySQL isn't running, or `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` in `server/.env` don't match your local setup. Confirm the database exists with `mysql -u root -p -e "SHOW DATABASES;"`.
+- **Login, sign-up, or admin login returns a server error** — `JWT_SECRET` is missing from `server/.env`; see [Environment Variables](#environment-variables).
+- **`'mysql' is not recognized as an internal or external command...`** — MySQL's `bin` folder isn't on your PATH. Add it (Windows default: `C:\Program Files\MySQL\MySQL Server 8.0\bin`) and restart your terminal, or call `mysql.exe` by its full path.
+- **The app loads and looks fine, but nothing you add seems to persist on refresh** — expected for everything except events/auth (see [step 5](#5-log-in)); the client is silently using local demo data because it can't reach the API. Check the `server` terminal for the actual error.
+- **Guest invite emails never arrive** — expected without real `SMTP_*` credentials; check the server console for an Ethereal preview link instead, or set up real SMTP credentials (see [Environment Variables](#environment-variables)).
+- **Port 3000 or 5000 already in use** — stop whatever else is using it, or start the client/server dev servers separately (each with its own `npm run dev`) and adjust ports as needed.
 
 ## Deployment
 
@@ -233,7 +295,7 @@ VITE_API_BASE_URL=http://localhost:5000/api
 
 Not in the current scope, but possible future extensions:
 
-- [ ] Ticketing and payments
+- [ ] Ticketing
 - [ ] Vendor reviews/ratings (separate from event feedback)
 - [ ] Notifications/reminders
 - [ ] Guest waitlist handling

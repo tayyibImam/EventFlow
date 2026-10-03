@@ -1,23 +1,22 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Calendar, DollarSign, Users, MapPin, Tag, Info, ArrowLeft, Check } from 'lucide-react';
+import { Calendar, DollarSign, Users, Tag, Info, ArrowLeft, Check } from 'lucide-react';
 import { useEventFlow } from '../context/EventFlowContext';
 import FormInput from '../component/FormInput';
 import Button from '../component/Button';
 
 export default function CreateEvent() {
   const navigate = useNavigate();
-  const { venues, categories, addEvent, currentProfile } = useEventFlow();
+  const { categories, addEvent, currentProfile } = useEventFlow();
 
   const [formData, setFormData] = useState({
     title: '',
     category: '',
     description: '',
-    venue: '',
     startDate: '',
     endDate: '',
     expectedGuests: '250',
-    budget: '$25,000',
+    budget: '৳25,000',
     status: 'Planned'
   });
 
@@ -45,9 +44,8 @@ export default function CreateEvent() {
       return;
     }
 
-    // Resolve the picked names against the real venue/category lists —
-    // these selects are keyed by name, but the backend needs the real ids.
-    const matchedVenue = venues.find(v => v.name === formData.venue);
+    // Resolve the picked name against the real category list — this select
+    // is keyed by name, but the backend needs the real id.
     const matchedCategory = categories.find(c => c.name === formData.category);
 
     setSubmitting(true);
@@ -56,12 +54,12 @@ export default function CreateEvent() {
       category: formData.category,
       categoryId: matchedCategory ? matchedCategory.id : null,
       description: formData.description || `Event planned by ${currentProfile.name} for ${formData.expectedGuests} attendees.`,
-      venue: matchedVenue ? matchedVenue.name : 'TBD',
-      venueId: matchedVenue ? matchedVenue.id : null,
+      venue: 'TBD',
+      venueId: null,
       startDate: formData.startDate,
       endDate: formData.endDate || formData.startDate,
       expectedGuests: parseInt(formData.expectedGuests, 10) || 100,
-      budget: formData.budget || '$15,000',
+      budget: formData.budget || '৳15,000',
       status: formData.status
     });
     setSubmitting(false);
@@ -72,10 +70,6 @@ export default function CreateEvent() {
   };
 
   const categoryOptions = categories.map(c => ({ value: c.name, label: c.name }));
-  const venueOptions = [
-    { value: '', label: 'TBD / Assign Later' },
-    ...venues.map(v => ({ value: v.name, label: `${v.name} (${v.location} — Cap: ${v.capacity})` }))
-  ];
 
   const statusOptions = [
     { value: "Planned", label: "Planned (Initial Planning Phase)" },
@@ -153,19 +147,6 @@ export default function CreateEvent() {
             placeholder="Outline the core theme, keynote speakers, target attendees, and key milestones..."
           />
 
-          {/* Venue Selection */}
-          <FormInput
-            id="create-event-venue"
-            label="Selected Venue"
-            name="venue"
-            type="select"
-            value={formData.venue}
-            onChange={handleChange}
-            options={venueOptions}
-            icon={MapPin}
-            helperText="Venues can also be changed or assigned later from the Venues catalog."
-          />
-
           {/* Dates */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <FormInput
@@ -213,7 +194,7 @@ export default function CreateEvent() {
               type="text"
               value={formData.budget}
               onChange={handleChange}
-              placeholder="e.g. $45,000"
+              placeholder="e.g. ৳45,000"
               icon={DollarSign}
               helperText="Informational planning estimation only. No payment gateway."
             />
@@ -223,7 +204,7 @@ export default function CreateEvent() {
           <div className="p-4 bg-sky-50 rounded-xl border border-sky-200/70 flex items-start gap-3 text-xs text-[#1B3A5C]">
             <Info className="w-4 h-4 text-[#1B3A5C] shrink-0 mt-0.5" />
             <p className="leading-relaxed">
-              <strong>Connected Architecture:</strong> Once created, this event automatically opens dedicated sub-modules for Venue reservation, Vendor contracts, Guest RSVP tables, Staff tasks, Schedule timelines, and Feedback collection.
+              <strong>Connected Architecture:</strong> Once created, this event automatically opens dedicated sub-modules for Venue reservation, Vendor contracts, Guest RSVP tables, Staff tasks, Schedule timelines, and Feedback collection. Venues are assigned afterward from the Venues catalog and require paying the confirmation deposit — they can't be attached for free here.
             </p>
           </div>
 

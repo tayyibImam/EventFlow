@@ -30,8 +30,10 @@ async function createEvent(req, res) {
   try {
     const {
       title, description, category_id, organizer_id,
-      venue_id, start_datetime, end_datetime, status, budget
-    } = req.body; // destructured
+      start_datetime, end_datetime, status, budget
+    } = req.body; // destructured — venue_id is intentionally not accepted here:
+    // a venue is only ever attached once its SSLCommerz deposit is paid
+    // (see payments.controller.js confirmPaidBooking), never at event creation.
 
     if (!title || !organizer_id || !start_datetime || !end_datetime) {
       return res.status(400).json({
@@ -42,9 +44,9 @@ async function createEvent(req, res) {
     const [result] = await pool.query(
       `INSERT INTO events
         (title, description, category_id, organizer_id, venue_id, start_datetime, end_datetime, status, budget)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
       [title, description || null, category_id || null, organizer_id,
-       venue_id || null, start_datetime, end_datetime, status || 'planned', budget || 0]
+       start_datetime, end_datetime, status || 'planned', budget || 0]
     );
 
     const [newEvent] = await pool.query('SELECT * FROM events WHERE event_id = ?', [result.insertId]);
@@ -60,8 +62,8 @@ async function updateEvent(req, res) {
     const { id } = req.params;
     const {
       title, description, category_id, organizer_id,
-      venue_id, start_datetime, end_datetime, status, budget
-    } = req.body;
+      start_datetime, end_datetime, status, budget
+    } = req.body; // venue_id is deliberately not accepted here — see createEvent.
 
     const [existing] = await pool.query('SELECT * FROM events WHERE event_id = ?', [id]);
     if (existing.length === 0) {
@@ -71,10 +73,10 @@ async function updateEvent(req, res) {
     await pool.query(
       `UPDATE events SET
         title = ?, description = ?, category_id = ?, organizer_id = ?,
-        venue_id = ?, start_datetime = ?, end_datetime = ?, status = ?, budget = ?
+        start_datetime = ?, end_datetime = ?, status = ?, budget = ?
        WHERE event_id = ?`,
       [title, description, category_id, organizer_id,
-       venue_id, start_datetime, end_datetime, status, budget, id]
+       start_datetime, end_datetime, status, budget, id]
     );
 
     const [updated] = await pool.query('SELECT * FROM events WHERE event_id = ?', [id]);

@@ -19,7 +19,7 @@ import StatusBadge from '../component/StatusBadge';
 import Button from '../component/Button';
 
 export default function AdminDashboard() {
-  const { events, adminStats, categories, activities, users, venues, vendors } = useEventFlow();
+  const { events, adminStats, categories, activities, vipAlerts, users, venues, vendors } = useEventFlow();
   const totalEvents = events.length;
   const totalVenues = venues.length;
   const totalVendors = vendors.length;
@@ -201,6 +201,40 @@ export default function AdminDashboard() {
                 <span className="font-semibold text-slate-700">Role-Based Access</span>
                 <span className="font-bold text-slate-800">4 Active Roles</span>
               </div>
+            </div>
+          </div>
+
+          {/* VIP/VVIP guests who have actually confirmed — derived live from
+              RSVP data, not a one-shot log entry, so it disappears if they
+              later decline and never shows an unconfirmed invite. */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-bold text-[#1B3A5C]">
+                VIP / VVIP Coordination
+              </h3>
+              {vipAlerts.length > 0 && (
+                <span className="text-[10px] font-bold text-rose-500 uppercase">{vipAlerts.length} Confirmed</span>
+              )}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {vipAlerts.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">
+                  No confirmed VIP/VVIP guests right now.
+                </p>
+              ) : (
+                vipAlerts.map((alert) => (
+                  <div key={alert.id} className="text-xs p-2.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2">
+                    <ShieldAlert className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-rose-800">{alert.guestType} guest confirmed — venue coordination needed</p>
+                      <p className="text-rose-700 text-[11px] mt-0.5">
+                        {alert.guestName} accepted their invitation to "{alert.eventTitle}"{alert.venueName ? ` at ${alert.venueName}` : ''}. Coordinate special handling with the venue authority.
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 

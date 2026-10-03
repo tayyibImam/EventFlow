@@ -41,17 +41,23 @@ const vendorsRoutes = require('./src/routes/vendors.routes');
 const guestsRoutes = require('./src/routes/guests.routes');
 const usersRoutes = require('./src/routes/users.routes');
 const tasksRoutes = require('./src/routes/tasks.routes');
+const taskFeedbackRoutes = require('./src/routes/taskFeedback.routes');
 const scheduleRoutes = require('./src/routes/schedule.routes');
 const feedbackRoutes = require('./src/routes/feedback.routes');
 const eventVendorsRoutes = require('./src/routes/eventVendors.routes');
 const eventGuestsRoutes = require('./src/routes/eventGuests.routes');
 const rsvpRoutes = require('./src/routes/rsvp.routes');
+const bookingsRoutes = require('./src/routes/bookings.routes');
+const vendorBookingsRoutes = require('./src/routes/vendorBookings.routes');
+const paymentsRoutes = require('./src/routes/payments.routes');
 
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+// SSLCommerz posts its success/fail/cancel/ipn callbacks as form-encoded data.
+app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/events', eventsRoutes);
 app.use('/api/auth', authRoutes);
@@ -61,11 +67,15 @@ app.use('/api/vendors', vendorsRoutes);
 app.use('/api/guests', guestsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/tasks', tasksRoutes);
+app.use('/api/task-feedback', taskFeedbackRoutes);
 app.use('/api/schedule', scheduleRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/events/:eventId/vendors', eventVendorsRoutes);
 app.use('/api/events/:eventId/guests', eventGuestsRoutes);
 app.use('/api/rsvp', rsvpRoutes);
+app.use('/api/venues/:venueId', bookingsRoutes);
+app.use('/api/vendors/:vendorId', vendorBookingsRoutes);
+app.use('/api/payments/sslcommerz', paymentsRoutes);
 
 
 app.get('/', (req, res) => res.send('EventFlow API is running'));

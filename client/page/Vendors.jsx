@@ -6,16 +6,15 @@ import SearchBar from '../component/SearchBar';
 import FilterDropdown from '../component/FilterDropdown';
 import Button from '../component/Button';
 import Modal from '../component/Modal';
-import FormInput from '../component/FormInput';
 
 export default function Vendors() {
-  const { vendors, events, eventVendorBookings, hireVendorForEvent } = useEventFlow();
+  const { vendors, events, eventVendorBookings, initiateVendorBooking } = useEventFlow();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
 
   const [hireTarget, setHireTarget] = useState(null);
-  const [hireForm, setHireForm] = useState({ eventId: '', agreedPrice: '', status: 'Pending' });
+  const [hireForm, setHireForm] = useState({ eventId: '' });
   const [hireError, setHireError] = useState('');
   const [hiring, setHiring] = useState(false);
 
@@ -43,7 +42,7 @@ export default function Vendors() {
 
   const openHireModal = (vendor) => {
     setHireTarget(vendor);
-    setHireForm({ eventId: events[0]?.id || '', agreedPrice: vendor.basePrice || '', status: 'Pending' });
+    setHireForm({ eventId: events[0]?.id || '' });
     setHireError('');
   };
 
@@ -68,11 +67,10 @@ export default function Vendors() {
 
     setHiring(true);
     try {
-      await hireVendorForEvent(hireForm.eventId, hireTarget.id, hireForm.agreedPrice, hireForm.status);
-      closeHireModal();
+      const { GatewayPageURL } = await initiateVendorBooking(hireForm.eventId, hireTarget.id, hireTarget.basePrice);
+      window.location.href = GatewayPageURL;
     } catch (err) {
-      setHireError(err.message || 'Could not hire this vendor. Please try again.');
-    } finally {
+      setHireError(err.message || 'Could not start the payment session.');
       setHiring(false);
     }
   };
@@ -161,22 +159,13 @@ export default function Vendors() {
                 </select>
               </div>
 
-              <FormInput
-                label="Agreed Price (USD)"
-                type="number"
-                value={hireForm.agreedPrice}
-                onChange={(e) => setHireForm({ ...hireForm, agreedPrice: e.target.value })}
-                placeholder="e.g. 12500"
-                required
-              />
-
-              <FormInput
-                label="Initial Status"
-                type="select"
-                value={hireForm.status}
-                onChange={(e) => setHireForm({ ...hireForm, status: e.target.value })}
-                options={['Pending', 'Confirmed']}
-              />
+              <div className="p-3 bg-sky-50 border border-sky-200/70 rounded-xl text-xs text-[#1B3A5C] space-y-1">
+                <div className="flex justify-between font-bold">
+                  <span>Full payment due now</span>
+                  <strong>৳{(Number(hireTarget?.basePrice) || 0).toLocaleString()}</strong>
+                </div>
+                <p className="text-[11px] text-slate-500 pt-1">You'll be redirected to SSLCommerz to pay the vendor in full. The vendor is only hired for this event once payment clears.</p>
+              </div>
             </>
           )}
 
@@ -185,7 +174,7 @@ export default function Vendors() {
               Cancel
             </Button>
             <Button type="submit" variant="primary" size="sm" icon={Briefcase} disabled={hiring || events.length === 0}>
-              {hiring ? 'Hiring...' : 'Hire Vendor'}
+              {hiring ? 'Redirecting to payment...' : 'Pay & Hire Vendor'}
             </Button>
           </div>
         </form>

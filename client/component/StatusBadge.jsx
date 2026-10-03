@@ -23,6 +23,10 @@ export default function StatusBadge({ status, size = "md" }) {
     styles = "bg-amber-50 text-amber-800 border-amber-200";
   } else if (["low"].includes(normalized)) {
     styles = "bg-slate-100 text-slate-700 border-slate-200";
+  } else if (["vip"].includes(normalized)) {
+    styles = "bg-amber-50 text-[#8a6d1d] border-amber-300 font-bold";
+  } else if (["vvip"].includes(normalized)) {
+    styles = "bg-rose-50 text-rose-700 border-rose-300 font-bold";
   }
 
   const sizeClasses = size === "sm" 

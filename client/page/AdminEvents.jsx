@@ -119,7 +119,6 @@ export default function AdminEvents() {
       description: form.description,
       organizerId: Number(form.organizerId),
       categoryId: form.categoryId ? Number(form.categoryId) : null,
-      venueId: form.venueId ? Number(form.venueId) : null,
       startDate: form.startDate,
       endDate: form.endDate || form.startDate,
       status: form.status,
@@ -334,29 +333,26 @@ export default function AdminEvents() {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormInput
-              label="Venue"
-              type="select"
-              value={form.venueId}
-              onChange={(e) => setForm({ ...form, venueId: e.target.value })}
-              options={[
-                { value: '', label: 'Unassigned' },
-                ...venues.map((v) => ({ value: v.id, label: v.name }))
-              ]}
-            />
+          <FormInput
+            label="Category"
+            type="select"
+            value={form.categoryId}
+            onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+            options={[
+              { value: '', label: 'Uncategorized' },
+              ...categories.map((c) => ({ value: c.id, label: c.name }))
+            ]}
+          />
 
-            <FormInput
-              label="Category"
-              type="select"
-              value={form.categoryId}
-              onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
-              options={[
-                { value: '', label: 'Uncategorized' },
-                ...categories.map((c) => ({ value: c.id, label: c.name }))
-              ]}
-            />
-          </div>
+          {modalMode === 'edit' && (
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600">
+              <span className="font-semibold text-slate-700">Venue: </span>
+              {venueNameById[form.venueId] || 'Unassigned'}
+              <span className="block mt-1 text-slate-400">
+                Venues are assigned via the paid booking flow on the Venues page, not editable here.
+              </span>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormInput
@@ -375,7 +371,7 @@ export default function AdminEvents() {
           </div>
 
           <FormInput
-            label="Budget (USD)"
+            label="Budget (BDT)"
             type="number"
             value={form.budget}
             onChange={(e) => setForm({ ...form, budget: e.target.value })}

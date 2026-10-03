@@ -6,7 +6,8 @@ import Button from './Button';
 export default function VenueCard({
   venue,
   onAssign,
-  onViewDetails
+  onViewDetails,
+  assignLabel = 'Assign to Event'
 }) {
   const {
     id,
@@ -115,7 +116,7 @@ export default function VenueCard({
             icon={CalendarPlus}
             onClick={() => onAssign && onAssign(venue)}
           >
-            Assign to Event
+            {assignLabel}
           </Button>
         </div>
       </div>

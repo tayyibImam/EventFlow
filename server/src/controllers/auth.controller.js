@@ -58,6 +58,37 @@ async function getMe(req, res) {
   }
 }
 
+// PUT /api/auth/me — self-service profile edit (name/email/phone) for
+// whichever account the JWT belongs to, any role. Deliberately narrower
+// than the admin-only PUT /api/users/:id — no role field accepted, so a
+// user can never promote themselves this way.
+async function updateMe(req, res) {
+  try {
+    const { name, email, phone } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({ error: 'name and email are required' });
+    }
+
+    await pool.query(
+      'UPDATE users SET name = ?, email = ?, phone = ? WHERE user_id = ?',
+      [name, email, phone || null, req.user.user_id]
+    );
+
+    const [rows] = await pool.query(
+      'SELECT user_id, name, email, phone, role FROM users WHERE user_id = ?',
+      [req.user.user_id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'An account with this email already exists' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+}
+
 
 
 // POST /api/auth/register — public signup for Organizer or Staff accounts.
@@ -103,4 +134,4 @@ async function register(req, res) {
   }
 }
 
-module.exports = { login, getMe, register };
+module.exports = { login, getMe, updateMe, register };

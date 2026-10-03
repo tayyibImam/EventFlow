@@ -93,7 +93,7 @@ function mapUserFromApi(row) {
 
 function formatCurrency(value) {
   const n = Number(value);
-  return Number.isFinite(n) ? `$${n.toLocaleString()}` : '$0';
+  return Number.isFinite(n) ? `৳${n.toLocaleString()}` : '৳0';
 }
 
 // venues table has no facilities/image/contact-person columns — those stay
@@ -222,7 +222,8 @@ function mapGuestFromApi(row) {
     name: row.name,
     email: row.email || '',
     phone: row.phone || '',
-    description: row.description || ''
+    description: row.description || '',
+    guestType: row.guest_type || 'Normal'
   };
 }
 
@@ -249,6 +250,20 @@ function mapFeedbackFromApi(row) {
   };
 }
 
+// taskTitle/eventTitle/staffName aren't stored on the row — joined against
+// tasks/events/staffDirectory when `taskFeedback` is composed (see below).
+function mapTaskFeedbackFromApi(row) {
+  return {
+    id: row.task_feedback_id,
+    taskId: row.task_id,
+    staffId: row.staff_id,
+    stage: row.stage === 'completed' ? 'Completed' : 'In Progress',
+    comment: row.comment || '',
+    isRead: !!row.is_read,
+    date: row.submitted_at ? row.submitted_at.slice(0, 10) : ''
+  };
+}
+
 const EventFlowContext = createContext(null);
 
 export function EventFlowProvider({ children }) {
@@ -271,8 +286,11 @@ export function EventFlowProvider({ children }) {
     return saved ? JSON.parse(saved) : null;
   });
 
-  // Currently logged-in profile per role (all male persona as requested)
-  const currentProfile = {
+  // Demo persona per role (all male persona as requested) — used only when
+  // there's no real backend session (see `currentProfile` below). Kept as
+  // state + localStorage, not a plain const, so editing it from Settings in
+  // demo/perspective-switcher mode actually sticks across reloads.
+  const DEFAULT_DEMO_PROFILES = {
     organizer: {
       name: "Meyadur Rahman",
       title: "Lead Event Organizer",
@@ -303,12 +321,19 @@ export function EventFlowProvider({ children }) {
     }
   };
 
+  const [demoProfiles, setDemoProfiles] = useState(() => {
+    const saved = localStorage.getItem('eventflow_demo_profiles');
+    return saved ? { ...DEFAULT_DEMO_PROFILES, ...JSON.parse(saved) } : DEFAULT_DEMO_PROFILES;
+  });
+
   const [events, setEvents] = useState(initialEvents);
   const [eventsLoading, setEventsLoading] = useState(true);
 
-  // Load real events from the database on first render
-  useEffect(() => {
-    fetch(`${API_URL}/events`)
+  // Load real events from the database — also exposed as `refreshEvents` so
+  // callers (e.g. the post-payment booking-result page) can pull a fresh
+  // events.venue_id after a server-side change they didn't make themselves.
+  const refreshEvents = () => {
+    return fetch(`${API_URL}/events`)
       .then((res) => {
         if (!res.ok) throw new Error('Failed to load events');
         return res.json();
@@ -320,6 +345,10 @@ export function EventFlowProvider({ children }) {
         console.warn('Using demo events — could not reach the API:', err.message);
       })
       .finally(() => setEventsLoading(false));
+  };
+
+  useEffect(() => {
+    refreshEvents();
   }, []);
   // Admin-only real data — the users list needs a JWT + admin role
   // (GET /api/users), unlike venues/vendors/categories below which are
@@ -453,6 +482,19 @@ export function EventFlowProvider({ children }) {
       .finally(() => setFeedbackLoading(false));
   }, []);
 
+  useEffect(() => {
+    fetch(`${API_URL}/task-feedback`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load task feedback');
+        return res.json();
+      })
+      .then((rows) => setTaskFeedbackRaw(rows.map(mapTaskFeedbackFromApi)))
+      .catch((err) => {
+        console.warn('No task feedback loaded — could not reach the API:', err.message);
+      })
+      .finally(() => setTaskFeedbackLoading(false));
+  }, []);
+
   const [venues, setVenues] = useState(() => {
     const saved = localStorage.getItem('eventflow_venues');
     return saved ? JSON.parse(saved) : initialVenues;
@@ -517,6 +559,11 @@ export function EventFlowProvider({ children }) {
   });
   const [feedbackLoading, setFeedbackLoading] = useState(true);
 
+  // Staff progress/completion notes on their own tasks — no mock seed data,
+  // this is a brand-new resource with nothing to fall back to offline.
+  const [taskFeedbackRaw, setTaskFeedbackRaw] = useState([]);
+  const [taskFeedbackLoading, setTaskFeedbackLoading] = useState(true);
+
   const [users, setUsers] = useState(() => {
     const saved = localStorage.getItem('eventflow_users');
     return saved ? JSON.parse(saved) : initialUsers;
@@ -567,9 +614,10 @@ export function EventFlowProvider({ children }) {
 
     return scoped.map(t => {
       const staffMember = staffDirectory.find(s => s.id === t.assignedToId);
-      return { ...t, assignedTo: staffMember?.name || 'Unassigned' };
+      const parentEvent = events.find(e => e.id === t.eventId);
+      return { ...t, assignedTo: staffMember?.name || 'Unassigned', eventTitle: parentEvent?.title };
     });
-  }, [tasks, visibleEvents, realUser, staffDirectory]);
+  }, [tasks, visibleEvents, events, realUser, staffDirectory]);
 
   const visibleSchedule = useMemo(() => {
     if (realUser && realUser.role === 'organizer') {
@@ -665,11 +713,33 @@ export function EventFlowProvider({ children }) {
         organization: inv.organization || '',
         role: inv.role || 'Delegate',
         invitationStatus: inv.invitationStatus || 'Sent',
+        guestType: g.guestType || 'Normal',
         rsvpToken: inv.token || null,
         rsvpLink: inv.token ? `${window.location.origin}/rsvp/${inv.token}` : null
       };
     });
   }, [invitations, guestDirectory]);
+
+  // Derived, not pushed — a VIP/VVIP guest only needs venue-authority
+  // coordination once they've actually confirmed, and recomputing this from
+  // live RSVP data (instead of logging a one-shot activity at invite time)
+  // means it can't go stale: it disappears if they later decline, and it
+  // picks up an accept made through the guest's own public RSVP link once
+  // the invitations poll above picks up that change.
+  const vipAlerts = useMemo(() => {
+    return guests
+      .filter((g) => (g.guestType === 'VIP' || g.guestType === 'VVIP') && g.rsvpStatus === 'Accepted')
+      .map((g) => {
+        const evt = events.find((e) => String(e.id) === String(g.eventId));
+        return {
+          id: g.id,
+          guestName: g.name,
+          guestType: g.guestType,
+          eventTitle: evt?.title || 'Unknown event',
+          venueName: evt?.venue && evt.venue !== 'TBD' ? evt.venue : null
+        };
+      });
+  }, [guests, events]);
 
   // Resolves real category/venue names (mapEventFromApi only has the raw
   // ids to work with) and computes real guest counts — kept as a separate
@@ -706,6 +776,35 @@ export function EventFlowProvider({ children }) {
       return { ...fb, guestName: guest?.name || fb.guestName || 'Guest' };
     });
   }, [feedbackRaw, guestDirectory, visibleEvents, realUser]);
+
+  // Staff progress/completion notes, joined against tasks (for the task's
+  // title + event) and staffDirectory (for the staff member's name) — this
+  // is what powers the organizer's "Staff Feedback" tab. Scoped the same
+  // way as `feedback` above: an organizer only sees notes on tasks under
+  // their own events; a staff member only sees their own submitted notes.
+  const taskFeedback = useMemo(() => {
+    const scoped = (realUser && realUser.role === 'staff')
+      ? taskFeedbackRaw.filter((tf) => tf.staffId === realUser.user_id)
+      : (realUser && realUser.role === 'organizer')
+        ? taskFeedbackRaw.filter((tf) => {
+            const t = tasks.find((task) => task.id === tf.taskId);
+            return t && visibleEvents.some((e) => e.id === t.eventId);
+          })
+        : taskFeedbackRaw;
+
+    return scoped.map((tf) => {
+      const task = tasks.find((t) => t.id === tf.taskId);
+      const parentEvent = task ? events.find((e) => e.id === task.eventId) : null;
+      const staffMember = staffDirectory.find((s) => s.id === tf.staffId);
+      return {
+        ...tf,
+        taskTitle: task?.title || 'Unknown Task',
+        eventId: task?.eventId,
+        eventTitle: parentEvent?.title || 'Unknown Event',
+        staffName: staffMember?.name || 'Unknown Staff'
+      };
+    });
+  }, [taskFeedbackRaw, tasks, events, visibleEvents, staffDirectory, realUser]);
 
   // Sync to local storage
   useEffect(() => {
@@ -744,6 +843,10 @@ export function EventFlowProvider({ children }) {
     localStorage.setItem('eventflow_categories', JSON.stringify(categories));
   }, [categories]);
 
+  useEffect(() => {
+    localStorage.setItem('eventflow_activities_v2', JSON.stringify(activities));
+  }, [activities]);
+
   // Actions
   const addEvent = async (newEvent) => {
     try {
@@ -758,7 +861,9 @@ export function EventFlowProvider({ children }) {
           description: newEvent.description,
           category_id: newEvent.categoryId ?? null,
           organizer_id: newEvent.organizerId ?? realUser?.user_id,
-          venue_id: newEvent.venueId ?? null,
+          // venue_id is deliberately omitted — the server ignores it on
+          // create/update anyway; a venue is only attached once its
+          // SSLCommerz deposit is paid (see initiateVenueBooking below).
           start_datetime: toDateTime(newEvent.startDate, '09:00:00'),
           end_datetime: toDateTime(newEvent.endDate || newEvent.startDate, '17:00:00'),
           status: (newEvent.status || 'planned').toLowerCase(),
@@ -785,7 +890,7 @@ export function EventFlowProvider({ children }) {
         id: `evt-${Date.now()}`,
         status: computeDisplayStatus(newEvent.status || 'Planned', newEvent.startDate, newEvent.endDate),
         progress: { venue: 100, vendors: 40, guests: 20, tasks: 10, schedule: 0, overall: 34 },
-        organizer: currentProfile.organizer.name
+        organizer: demoProfiles.organizer.name
       };
       setEvents(prev => [eventObj, ...prev]);
       return eventObj;
@@ -811,7 +916,7 @@ export function EventFlowProvider({ children }) {
           description: updatedFields.description ?? current.description,
           category_id: updatedFields.categoryId !== undefined ? updatedFields.categoryId : (current.categoryId ?? null),
           organizer_id: updatedFields.organizerId !== undefined ? updatedFields.organizerId : (current.organizerId ?? realUser?.user_id),
-          venue_id: updatedFields.venueId !== undefined ? updatedFields.venueId : (current.venueId ?? null),
+          // venue_id is deliberately omitted — see addEvent above.
           start_datetime: updatedFields.startDate ? toDateTime(updatedFields.startDate, '09:00:00') : current.startDate?.replace('T', ' '),
           end_datetime: updatedFields.endDate ? toDateTime(updatedFields.endDate, '17:00:00') : current.endDate?.replace('T', ' '),
           status: (updatedFields.status ?? current.status ?? 'planned').toLowerCase(),
@@ -850,15 +955,30 @@ export function EventFlowProvider({ children }) {
         (g) => g.email && form.email && g.email.toLowerCase() === form.email.toLowerCase()
       );
 
+      const desiredGuestType = form.guestType || 'Normal';
+
       if (!guest) {
         const res = await fetch(`${API_URL}/guests`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: form.name, email: form.email, phone: form.phone, description: form.description })
+          body: JSON.stringify({ name: form.name, email: form.email, phone: form.phone, description: form.description, guest_type: desiredGuestType })
         });
         if (!res.ok) throw new Error('Failed to create guest');
         guest = mapGuestFromApi(await res.json());
         setGuestDirectory(prev => [...prev, guest]);
+      } else if (guest.guestType !== desiredGuestType) {
+        // Re-inviting an existing directory entry with a different tier
+        // (e.g. upgrading them to VIP) updates their guest record too, so
+        // the directory and future invites stay consistent.
+        const res = await fetch(`${API_URL}/guests/${guest.guestId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: guest.name, email: guest.email, phone: guest.phone, description: guest.description, guest_type: desiredGuestType })
+        });
+        if (res.ok) {
+          guest = mapGuestFromApi(await res.json());
+          setGuestDirectory(prev => prev.map(g => g.guestId === guest.guestId ? guest : g));
+        }
       }
 
       const rsvpStatus = form.rsvpStatus || 'Invited';
@@ -906,7 +1026,8 @@ export function EventFlowProvider({ children }) {
     } catch (err) {
       console.error('addGuest: could not reach the API, saving locally only:', err);
       const guestId = `local-${Date.now()}`;
-      const localGuest = { guestId, name: form.name, email: form.email, phone: form.phone || '', description: form.description || '' };
+      const guestType = form.guestType || 'Normal';
+      const localGuest = { guestId, name: form.name, email: form.email, phone: form.phone || '', description: form.description || '', guestType };
       setGuestDirectory(prev => [...prev, localGuest]);
       const newInvite = {
         eventId: form.eventId,
@@ -917,6 +1038,7 @@ export function EventFlowProvider({ children }) {
         invitationStatus: form.invitationStatus || 'Sent'
       };
       setInvitations(prev => [newInvite, ...prev]);
+
       return { id: `${form.eventId}::${guestId}`, ...localGuest, ...newInvite };
     }
   };
@@ -1147,54 +1269,149 @@ export function EventFlowProvider({ children }) {
     }
   };
 
-  // Persists to the real events.venue_id column via updateEvent — a venue's
-  // "assigned event" is derived live from events elsewhere (see Venues.jsx),
-  // not stored back on the venue itself.
-  const assignVenueToEvent = async (venueId, eventId) => {
-    const ev = events.find(e => e.id === eventId);
-    const venue = venues.find(v => v.id === venueId);
-    if (!ev || !venue) return;
+  // A staff member leaving a progress ("In Progress") or completion
+  // ("Completed") note on one of their own tasks — surfaced to the
+  // organizer's Staff Feedback tab. `form.stage` stays in display form
+  // ('In Progress' | 'Completed') on the client, same as `feedback.rating`
+  // above, and only gets mapped to the API's lowercase enum in the request.
+  const addTaskFeedback = async (form) => {
+    const staffId = realUser?.user_id;
 
-    await updateEvent(eventId, { venueId: venue.id, venue: venue.name });
-
-    addActivity({
-      title: "Venue assigned",
-      description: `${venue.name} assigned to ${ev.title}`,
-      type: "venue"
-    });
-  };
-
-  // Hiring a vendor is genuinely per-event (event_vendors table), not a
-  // field on the vendor itself — these throw on failure so the calling UI
-  // can show a real error instead of pretending the booking landed.
-  const hireVendorForEvent = async (eventId, vendorId, agreedPrice, status = 'Pending') => {
-    const res = await fetch(`${API_URL}/events/${eventId}/vendors`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        vendor_id: vendorId,
-        agreed_price: Number(agreedPrice) || 0,
-        status: mapBookingStatusToApi(status)
-      })
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Failed to hire vendor for this event');
+    if (!staffId) {
+      // Demo/perspective-switcher mode — no real backend staff account to
+      // attach this to, so it stays local-only, same as other mock domains.
+      const tfObj = {
+        id: `tfb-${Date.now()}`,
+        taskId: form.taskId,
+        staffId: null,
+        stage: form.stage,
+        comment: form.comment,
+        isRead: false,
+        date: new Date().toISOString().split('T')[0]
+      };
+      setTaskFeedbackRaw(prev => [tfObj, ...prev]);
+      addActivity({
+        title: "Task feedback submitted",
+        description: `${currentProfile.name} left feedback on a task`,
+        type: "task"
+      });
+      return tfObj;
     }
 
-    const booking = mapEventVendorFromApi(await res.json());
-    setEventVendorBookings(prev => [booking, ...prev]);
+    try {
+      const res = await fetch(`${API_URL}/task-feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+        },
+        body: JSON.stringify({
+          task_id: form.taskId,
+          staff_id: staffId,
+          stage: form.stage === 'Completed' ? 'completed' : 'in_progress',
+          comment: form.comment
+        })
+      });
+      if (!res.ok) throw new Error('Failed to submit task feedback');
+      const tfObj = mapTaskFeedbackFromApi(await res.json());
+      setTaskFeedbackRaw(prev => [tfObj, ...prev]);
 
-    const vend = vendors.find(v => v.id === vendorId);
-    const ev = events.find(e => e.id === eventId);
-    addActivity({
-      title: "Vendor hired",
-      description: `${vend?.name || 'Vendor'} hired for ${ev?.title || 'event'}`,
-      type: "vendor"
+      const task = tasks.find(t => t.id === form.taskId);
+      addActivity({
+        title: "Task feedback submitted",
+        description: `${realUser.name} left feedback on "${task?.title || 'a task'}"`,
+        type: "task"
+      });
+      return tfObj;
+    } catch (err) {
+      console.error('addTaskFeedback: could not reach the API, saving locally only:', err);
+      const tfObj = {
+        id: `tfb-${Date.now()}`,
+        taskId: form.taskId,
+        staffId,
+        stage: form.stage,
+        comment: form.comment,
+        isRead: false,
+        date: new Date().toISOString().split('T')[0]
+      };
+      setTaskFeedbackRaw(prev => [tfObj, ...prev]);
+      return tfObj;
+    }
+  };
+
+  // Organizer marking a staff note as read on the Staff Feedback tab — a
+  // one-way action (new feedback always starts unread/"red"; there's no UI
+  // to flip it back), mirroring the one-way PUT /:id/read on the server.
+  const markTaskFeedbackRead = async (feedbackId) => {
+    setTaskFeedbackRaw(prev => prev.map(tf => tf.id === feedbackId ? { ...tf, isRead: true } : tf));
+
+    if (typeof feedbackId !== 'number') return; // local-only demo entry, nothing to sync
+
+    try {
+      const res = await fetch(`${API_URL}/task-feedback/${feedbackId}/read`, {
+        method: 'PUT',
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {}
+      });
+      if (!res.ok) throw new Error('Failed to mark feedback as read');
+    } catch (err) {
+      console.error('markTaskFeedbackRead: could not reach the API, kept local change only:', err);
+    }
+  };
+
+  // Venue assignment is payment-gated (see Venues.jsx) — events.venue_id is
+  // only ever set server-side once a booking's SSLCommerz deposit is
+  // validated (server/src/controllers/payments.controller.js), never by a
+  // direct client call. These two just drive that flow from the client.
+  const checkVenueAvailability = async (venueId, eventId) => {
+    const res = await fetch(`${API_URL}/venues/${venueId}/availability?eventId=${eventId}`, {
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {}
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to check venue availability');
+    }
+    return res.json();
+  };
+
+  const initiateVenueBooking = async (venueId, eventId) => {
+    const res = await fetch(`${API_URL}/venues/${venueId}/bookings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      },
+      body: JSON.stringify({ event_id: eventId })
     });
 
-    return booking;
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(payload.error || 'Failed to start venue booking payment');
+      err.conflict = payload.conflict;
+      throw err;
+    }
+    return payload; // { bookingId, GatewayPageURL }
+  };
+
+  // Hiring a vendor is payment-gated, same as venue assignment (see
+  // checkVenueAvailability/initiateVenueBooking above) — but charged in
+  // full, not a 10% deposit. event_vendors only gets a row server-side once
+  // the SSLCommerz payment is validated (payments.controller.js); there is
+  // no free/unpaid way to hire a vendor.
+  const initiateVendorBooking = async (eventId, vendorId, agreedPrice) => {
+    const res = await fetch(`${API_URL}/vendors/${vendorId}/bookings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      },
+      body: JSON.stringify({ event_id: eventId, agreed_price: Number(agreedPrice) || 0 })
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(payload.error || 'Failed to start vendor hire payment');
+    }
+    return payload; // { bookingId, GatewayPageURL }
   };
 
   const updateVendorEventBooking = async (eventId, vendorId, status) => {
@@ -1244,7 +1461,10 @@ export function EventFlowProvider({ children }) {
   const addVenue = async (form) => {
     const res = await fetch(`${API_URL}/venues`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      },
       body: JSON.stringify({
         name: form.name,
         address: form.address,
@@ -1273,7 +1493,10 @@ export function EventFlowProvider({ children }) {
   const updateVenue = async (venueId, form) => {
     const res = await fetch(`${API_URL}/venues/${venueId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      },
       body: JSON.stringify({
         name: form.name,
         address: form.address,
@@ -1295,7 +1518,10 @@ export function EventFlowProvider({ children }) {
   };
 
   const deleteVenue = async (venueId) => {
-    const res = await fetch(`${API_URL}/venues/${venueId}`, { method: 'DELETE' });
+    const res = await fetch(`${API_URL}/venues/${venueId}`, {
+      method: 'DELETE',
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {}
+    });
     if (!res.ok && res.status !== 204) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Failed to delete venue');
@@ -1623,6 +1849,60 @@ export function EventFlowProvider({ children }) {
     return { venue, vendors: vendorsPct, guests: guestsPct, tasks: tasksPct, schedule: schedulePct, overall };
   };
 
+  // Self-service profile edit from the Settings page. A real backend
+  // session (authToken + realUser) persists through PUT /api/auth/me; the
+  // demo/perspective-switcher personas have no backend row at all, so those
+  // edits just update `demoProfiles` (localStorage-backed) instead.
+  const updateProfile = async (form) => {
+    if (authToken && realUser) {
+      const res = await fetch(`${API_URL}/auth/me`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ name: form.name, email: form.email, phone: form.phone || null })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to update profile');
+      }
+
+      const updated = await res.json();
+      const merged = { ...realUser, ...updated };
+      setRealUser(merged);
+      localStorage.setItem('eventflow_user', JSON.stringify(merged));
+      addActivity({
+        title: 'Profile updated',
+        description: `${merged.name}'s profile was updated`,
+        type: 'system'
+      });
+      return merged;
+    }
+
+    const updatedDemoProfile = {
+      ...demoProfiles[currentRole],
+      name: form.name,
+      email: form.email,
+      avatar: form.name.trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase() || demoProfiles[currentRole]?.avatar
+    };
+
+    setDemoProfiles(prev => {
+      const next = { ...prev, [currentRole]: updatedDemoProfile };
+      localStorage.setItem('eventflow_demo_profiles', JSON.stringify(next));
+      return next;
+    });
+
+    addActivity({
+      title: 'Profile updated',
+      description: `${updatedDemoProfile.name}'s profile was updated`,
+      type: 'system'
+    });
+
+    return updatedDemoProfile;
+  };
+
   const logout = () => {
     setIsAuthenticated(false);
     setAuthToken(null);
@@ -1632,7 +1912,7 @@ export function EventFlowProvider({ children }) {
     localStorage.removeItem('eventflow_user');
     addActivity({
       title: `Session Signed Out`,
-      description: `Active session terminated for ${currentProfile[currentRole]?.name || 'User'}`,
+      description: `Active session terminated for ${demoProfiles[currentRole]?.name || 'User'}`,
       type: 'system'
     });
   };
@@ -1670,14 +1950,14 @@ export function EventFlowProvider({ children }) {
   };
 
   const login = (role) => {
-    if (role && currentProfile[role]) {
+    if (role && demoProfiles[role]) {
       setCurrentRole(role);
     }
     setIsAuthenticated(true);
     localStorage.setItem('eventflow_authenticated', 'true');
     addActivity({
       title: `User Signed In`,
-      description: `Authenticated as ${currentProfile[role || currentRole]?.name || 'User'} (${role || currentRole})`,
+      description: `Authenticated as ${demoProfiles[role || currentRole]?.name || 'User'} (${role || currentRole})`,
       type: 'system'
     });
   };
@@ -1735,8 +2015,8 @@ export function EventFlowProvider({ children }) {
               email: realUser.email,
               avatar: realUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
             }
-          : (currentProfile[currentRole] || currentProfile.organizer),
-        allProfiles: currentProfile,
+          : (demoProfiles[currentRole] || demoProfiles.organizer),
+        allProfiles: demoProfiles,
         eventsLoading,
         events: displayEvents,
         venues,
@@ -1752,10 +2032,13 @@ export function EventFlowProvider({ children }) {
         scheduleLoading,
         feedback,
         feedbackLoading,
+        taskFeedback,
+        taskFeedbackLoading,
         users,
         categories,
         categoriesLoading,
         activities,
+        vipAlerts,
         adminStats,
         selectedEventId,
         setSelectedEventId,
@@ -1772,9 +2055,13 @@ export function EventFlowProvider({ children }) {
         addScheduleItem,
         deleteScheduleItem,
         addFeedback,
-        assignVenueToEvent,
+        addTaskFeedback,
+        markTaskFeedbackRead,
+        checkVenueAvailability,
+        initiateVenueBooking,
+        refreshEvents,
         eventVendorBookings,
-        hireVendorForEvent,
+        initiateVendorBooking,
         updateVendorEventBooking,
         removeVendorFromEvent,
         addVenue,
@@ -1791,6 +2078,7 @@ export function EventFlowProvider({ children }) {
         updateUser,
         updateUserRole,
         deleteUser,
+        updateProfile,
         addActivity
       }}
     >

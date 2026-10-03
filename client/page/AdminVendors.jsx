@@ -242,7 +242,7 @@ export default function AdminVendors() {
           </div>
 
           <FormInput
-            label="Base Price (USD)"
+            label="Base Price (BDT)"
             type="number"
             value={form.basePrice}
             onChange={(e) => setForm({ ...form, basePrice: e.target.value })}

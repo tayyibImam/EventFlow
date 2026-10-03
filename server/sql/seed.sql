@@ -1,6 +1,7 @@
 SET FOREIGN_KEY_CHECKS = 0;
 TRUNCATE TABLE event_guests;
 TRUNCATE TABLE event_vendors;
+TRUNCATE TABLE task_feedback;
 TRUNCATE TABLE tasks;
 TRUNCATE TABLE event_schedule;
 TRUNCATE TABLE feedback;

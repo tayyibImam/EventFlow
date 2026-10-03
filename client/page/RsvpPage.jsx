@@ -4,6 +4,7 @@ import { Calendar, MapPin, CheckCircle2, XCircle, Star, Loader2, ShieldAlert } f
 import Button from '../component/Button';
 import StatusBadge from '../component/StatusBadge';
 import FormInput from '../component/FormInput';
+import Modal from '../component/Modal';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
@@ -31,6 +32,7 @@ export default function RsvpPage() {
 
   const [updating, setUpdating] = useState(false);
   const [rsvpError, setRsvpError] = useState('');
+  const [pendingRsvp, setPendingRsvp] = useState(null); // 'accepted' | 'declined' | null
 
   const [feedbackForm, setFeedbackForm] = useState({ rating: 5, comment: '' });
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
@@ -64,7 +66,17 @@ export default function RsvpPage() {
       setRsvpError(err.message);
     } finally {
       setUpdating(false);
+      setPendingRsvp(null);
     }
+  };
+
+  // Switching straight from Accepted to Declined (or back) is the exact
+  // mistake a confirmation guards against — a stray tap shouldn't silently
+  // flip a guest's seat status, so both buttons route through this instead
+  // of calling handleRsvp directly.
+  const requestRsvp = (status) => {
+    if (mapRsvpDisplay(invite.rsvp_status).toLowerCase() === status) return;
+    setPendingRsvp(status);
   };
 
   const handleFeedbackSubmit = async (e) => {
@@ -116,6 +128,9 @@ export default function RsvpPage() {
   const eventHasStarted = invite.start_datetime
     ? new Date() >= new Date(invite.start_datetime.replace(' ', 'T'))
     : false;
+  const rsvpDeadlinePassed = invite.start_datetime
+    ? new Date() >= new Date(new Date(invite.start_datetime.replace(' ', 'T')).getTime() - 24 * 60 * 60 * 1000)
+    : false;
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] py-8 px-4">
@@ -164,12 +179,18 @@ export default function RsvpPage() {
             </div>
           )}
 
+          {!eventHasStarted && rsvpDeadlinePassed && rsvpStatus !== 'Accepted' && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-semibold">
+              The RSVP deadline (1 day before the event) has passed — unconfirmed guests are automatically marked Declined. You can still respond below.
+            </div>
+          )}
+
           <div className="flex gap-3">
             <Button
               variant={rsvpStatus === 'Accepted' ? 'primary' : 'outline'}
               icon={CheckCircle2}
               disabled={updating}
-              onClick={() => handleRsvp('accepted')}
+              onClick={() => requestRsvp('accepted')}
             >
               Accept
             </Button>
@@ -177,7 +198,7 @@ export default function RsvpPage() {
               variant={rsvpStatus === 'Declined' ? 'danger' : 'outline'}
               icon={XCircle}
               disabled={updating}
-              onClick={() => handleRsvp('declined')}
+              onClick={() => requestRsvp('declined')}
             >
               Decline
             </Button>
@@ -241,6 +262,45 @@ export default function RsvpPage() {
           EventFlow &bull; This link is unique to you — no account needed.
         </p>
       </div>
+
+      {/* RSVP confirmation — guards against an accidental tap flipping an
+          already-set Accept/Decline, especially when switching between them. */}
+      <Modal
+        isOpen={!!pendingRsvp}
+        onClose={() => setPendingRsvp(null)}
+        title={pendingRsvp === 'accepted' ? 'Confirm Attendance' : 'Confirm Decline'}
+        subtitle={invite?.title}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            {rsvpStatus === 'Accepted' && pendingRsvp === 'declined' && (
+              <>You previously accepted this invitation. Are you sure you want to change your RSVP to <strong className="text-rose-600">Declined</strong>?</>
+            )}
+            {rsvpStatus === 'Declined' && pendingRsvp === 'accepted' && (
+              <>You previously declined this invitation. Are you sure you want to change your RSVP to <strong className="text-emerald-600">Accepted</strong>?</>
+            )}
+            {rsvpStatus !== 'Accepted' && rsvpStatus !== 'Declined' && pendingRsvp === 'accepted' && (
+              <>Confirm that you'll be <strong className="text-emerald-600">attending</strong> this event.</>
+            )}
+            {rsvpStatus !== 'Accepted' && rsvpStatus !== 'Declined' && pendingRsvp === 'declined' && (
+              <>Confirm that you'll <strong className="text-rose-600">not be attending</strong> this event.</>
+            )}
+          </p>
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button variant="outline" size="sm" onClick={() => setPendingRsvp(null)} disabled={updating}>
+              Cancel
+            </Button>
+            <Button
+              variant={pendingRsvp === 'declined' ? 'danger' : 'primary'}
+              size="sm"
+              disabled={updating}
+              onClick={() => handleRsvp(pendingRsvp)}
+            >
+              {updating ? 'Saving...' : 'Yes, Confirm'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

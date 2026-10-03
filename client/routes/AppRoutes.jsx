@@ -13,11 +13,14 @@ import Events from '../page/Events';
 import CreateEvent from '../page/CreateEvent';
 import EventDetails from '../page/EventDetails';
 import Venues from '../page/Venues';
+import VenueBookingResult from '../page/VenueBookingResult';
 import Vendors from '../page/Vendors';
+import VendorBookingResult from '../page/VendorBookingResult';
 import Guests from '../page/Guests';
 import Tasks from '../page/Tasks';
 import Schedule from '../page/Schedule';
 import Feedback from '../page/Feedback';
+import StaffFeedback from '../page/StaffFeedback';
 import StaffTasks from '../page/StaffTasks';
 import Invitations from '../page/Invitations';
 import AdminDashboard from '../page/AdminDashboard';
@@ -61,11 +64,14 @@ export default function AppRoutes() {
         <Route path="/events/create" element={<CreateEvent />} />
         <Route path="/events/:id" element={<EventDetails />} />
         <Route path="/venues" element={<Venues />} />
+        <Route path="/venues/booking-result" element={<VenueBookingResult />} />
         <Route path="/vendors" element={<Vendors />} />
+        <Route path="/vendors/booking-result" element={<VendorBookingResult />} />
         <Route path="/guests" element={<Guests />} />
         <Route path="/tasks" element={<Tasks />} />
         <Route path="/schedule" element={<Schedule />} />
         <Route path="/feedback" element={<Feedback />} />
+        <Route path="/staff-feedback" element={<StaffFeedback />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
 
@@ -85,6 +91,7 @@ export default function AppRoutes() {
         <Route path="events" element={<AdminEvents />} />
         <Route path="venues" element={<AdminVenues />} />
         <Route path="vendors" element={<AdminVendors />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
 
       {/* Staff Portal */}
@@ -97,11 +104,13 @@ export default function AppRoutes() {
         }
       >
         <Route index element={<StaffTasks />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
 
       {/* Guest Portal */}
       <Route path="/guest" element={<GuestLayout />}>
         <Route index element={<Invitations />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
 
       {/* Fallback Catch-all */}

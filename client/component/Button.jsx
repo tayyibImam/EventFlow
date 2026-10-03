@@ -38,7 +38,7 @@ export default function Button({
       className={`${baseStyles} ${variants[variant] || variants.primary} ${sizes[size] || sizes.md} ${className}`}
     >
       {Icon && <Icon className="w-4 h-4 shrink-0" />}
-      <span>{children}</span>
+      {children}
     </button>
   );
 }

@@ -29,7 +29,8 @@ export default function Guests() {
     role: 'Delegate',
     eventId: events[0]?.id || '',
     invitationStatus: 'Sent',
-    rsvpStatus: 'Accepted'
+    rsvpStatus: 'Accepted',
+    guestType: 'Normal'
   });
 
   const rsvpFilterOptions = ['All', 'Accepted', 'Declined', 'No Response', 'Invited'];
@@ -75,7 +76,8 @@ export default function Guests() {
       role: 'Delegate',
       eventId: events[0]?.id || '',
       invitationStatus: 'Sent',
-      rsvpStatus: 'Accepted'
+      rsvpStatus: 'Accepted',
+      guestType: 'Normal'
     });
     setIsAddModalOpen(false);
   };
@@ -238,6 +240,20 @@ export default function Guests() {
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             placeholder="Dietary requirements, accessibility notes, VIP handling instructions..."
           />
+
+          <FormInput
+            label="Guest Type"
+            type="select"
+            value={form.guestType}
+            onChange={(e) => setForm({ ...form, guestType: e.target.value })}
+            options={["Normal", "VIP", "VVIP"]}
+          />
+
+          {(form.guestType === 'VIP' || form.guestType === 'VVIP') && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800">
+              Once this guest accepts, admin will see an alert on the dashboard so the venue authority can be looped in for special handling.
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 tracking-wide mb-1.5">

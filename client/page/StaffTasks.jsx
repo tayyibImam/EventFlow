@@ -5,6 +5,7 @@ import TaskCard from '../component/TaskCard';
 import FilterDropdown from '../component/FilterDropdown';
 import SearchBar from '../component/SearchBar';
 import DashboardCard from '../component/DashboardCard';
+import TaskFeedbackModal from '../component/TaskFeedbackModal';
 
 // `tasks` here is already scoped to this account's own assignments by
 // EventFlowContext's visibleTasks (real login: tasks.assigned_to === your
@@ -15,6 +16,7 @@ export default function StaffTasks() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [feedbackTask, setFeedbackTask] = useState(null);
 
   const statusOptions = ['All', 'Pending', 'In Progress', 'Done'];
 
@@ -120,11 +122,19 @@ export default function StaffTasks() {
               key={t.id}
               task={t}
               onStatusChange={updateTaskStatus}
+              onGiveFeedback={setFeedbackTask}
               readOnly={true}
             />
           ))}
         </div>
       )}
+
+      {/* Give Feedback Modal */}
+      <TaskFeedbackModal
+        isOpen={!!feedbackTask}
+        onClose={() => setFeedbackTask(null)}
+        task={feedbackTask}
+      />
     </div>
   );
 }
