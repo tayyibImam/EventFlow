@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, User, Clock, CheckCircle2, AlertCircle, Edit2, Trash2, MessageSquarePlus } from 'lucide-react';
+import { Calendar, User, Clock, CheckCircle2, AlertCircle, Edit2, Trash2, MessageSquarePlus, Lock } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 
 export default function TaskCard({
@@ -116,18 +116,28 @@ export default function TaskCard({
           </div>
         )}
 
-        {/* Give Feedback — staff's own view of their task */}
+        {/* Give Feedback — staff's own view of their task. Once Done, no
+            further feedback is accepted (server-enforced too), so the
+            action is replaced with a plain "closed" note instead of a
+            button that would just fail on click. */}
         {onGiveFeedback && (
-          <button
-            type="button"
-            id={`task-give-feedback-${id}`}
-            onClick={() => onGiveFeedback(task)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-[#1B3A5C] bg-sky-50 hover:bg-sky-100 rounded-md transition-colors"
-            title="Give feedback on this task"
-          >
-            <MessageSquarePlus className="w-3.5 h-3.5" />
-            <span>Feedback</span>
-          </button>
+          status === 'Done' ? (
+            <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-400">
+              <Lock className="w-3.5 h-3.5" />
+              <span>Feedback closed</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              id={`task-give-feedback-${id}`}
+              onClick={() => onGiveFeedback(task)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-[#1B3A5C] bg-sky-50 hover:bg-sky-100 rounded-md transition-colors"
+              title="Give feedback on this task"
+            >
+              <MessageSquarePlus className="w-3.5 h-3.5" />
+              <span>Feedback</span>
+            </button>
+          )
         )}
       </div>
     </div>

@@ -3,10 +3,12 @@ const sslcommerz = require('../services/sslcommerz.service');
 
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:5000';
 
-// Full-payment ledger for hiring a vendor — unlike venue_bookings this is
-// charged in full, not a 10% deposit (see schema.sql). A 'pending' row less
-// than 30 minutes old also blocks a second checkout for the same event +
-// vendor so a double-click can't start two payment sessions for one hire.
+// Deposit ledger for hiring a vendor — same two-stage model as
+// venue_bookings (see schema.sql): 10% up front confirms the hire, and the
+// remaining 90% becomes due after the event ends, settled through
+// balance_payments. A 'pending' row less than 30 minutes old also blocks a
+// second checkout for the same event + vendor so a double-click can't start
+// two payment sessions for one hire.
 async function hasOpenBooking(eventId, vendorId) {
   const [rows] = await pool.query(
     `SELECT booking_id FROM vendor_bookings
@@ -62,23 +64,24 @@ async function createBooking(req, res) {
     const [organizerRows] = await pool.query('SELECT name, email, phone FROM users WHERE user_id = ?', [req.user.user_id]);
     const organizer = organizerRows[0];
 
+    const depositAmount = Math.round(price * 0.10 * 100) / 100;
     const tranId = `VND-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     const [result] = await pool.query(
-      `INSERT INTO vendor_bookings (event_id, vendor_id, organizer_id, agreed_price, status, tran_id)
-       VALUES (?, ?, ?, ?, 'pending', ?)`,
-      [event.event_id, vendor.vendor_id, req.user.user_id, price, tranId]
+      `INSERT INTO vendor_bookings (event_id, vendor_id, organizer_id, agreed_price, deposit_amount, status, tran_id)
+       VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+      [event.event_id, vendor.vendor_id, req.user.user_id, price, depositAmount, tranId]
     );
 
     const apiResponse = await sslcommerz.initiatePayment({
       tranId,
-      amount: price,
+      amount: depositAmount,
       customer: { name: organizer.name, email: organizer.email, phone: organizer.phone, address: 'N/A', city: 'Dhaka' },
       successUrl: `${SERVER_URL}/api/payments/sslcommerz/success?tran_id=${tranId}`,
       failUrl: `${SERVER_URL}/api/payments/sslcommerz/fail?tran_id=${tranId}`,
       cancelUrl: `${SERVER_URL}/api/payments/sslcommerz/cancel?tran_id=${tranId}`,
       ipnUrl: `${SERVER_URL}/api/payments/sslcommerz/ipn?tran_id=${tranId}`,
-      productName: 'Vendor Hire Payment'
+      productName: 'Vendor Hire Confirmation Deposit'
     });
 
     if (!apiResponse || !apiResponse.GatewayPageURL) {

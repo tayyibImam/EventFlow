@@ -16,9 +16,11 @@ async function getEventVendors(req, res) {
 }
 
 // There is deliberately no unpaid "book vendor" endpoint here — a vendor
-// hire requires full payment first (see vendorBookings.controller.js). The
-// event_vendors row is only ever created server-side by
-// payments.controller.js's confirmPaidBooking, once that payment clears.
+// hire requires its 10% confirmation deposit first (see
+// vendorBookings.controller.js; the remaining 90% is settled post-event
+// through balancePayments.controller.js). The event_vendors row is only ever
+// created server-side by payments.controller.js's confirmPaidBooking, once
+// that deposit clears.
 
 // PUT /api/events/:eventId/vendors/:vendorId — update price/status of a booking
 async function updateBooking(req, res) {

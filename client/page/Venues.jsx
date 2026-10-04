@@ -239,7 +239,10 @@ export default function Venues() {
             <div className="p-3 bg-sky-50 border border-sky-200/70 rounded-xl text-xs text-[#1B3A5C] space-y-1">
               <div className="flex justify-between"><span>Total venue price</span><strong>৳{totalPrice.toLocaleString()}</strong></div>
               <div className="flex justify-between font-bold"><span>Confirmation deposit due now (10%)</span><strong>৳{depositAmount.toLocaleString()}</strong></div>
-              <p className="text-[11px] text-slate-500 pt-1">You'll be redirected to SSLCommerz to pay the deposit. The venue is only locked in once payment clears.</p>
+              <p className="text-[11px] text-slate-500 pt-1">
+                You'll be redirected to SSLCommerz to pay the deposit. The venue is only locked in once payment clears.
+                The remaining 90% appears on your Payments tab after the event ends, and is due within 3 days.
+              </p>
             </div>
           )}
 

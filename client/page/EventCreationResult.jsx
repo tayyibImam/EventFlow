@@ -7,24 +7,29 @@ const STATUS_CONFIG = {
   success: {
     icon: CheckCircle2,
     color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
-    title: 'Deposit Paid — Vendor Hired',
-    message: 'Your 10% confirmation deposit was received and the vendor has been hired for your event. The remaining 90% will appear on your Payments tab once the event ends.'
+    title: 'Fee Paid — Event Created',
+    message: 'Your ৳5,000 platform convenience fee was received and your event is now live.'
   },
   failed: {
     icon: XCircle,
     color: 'text-rose-600 bg-rose-50 border-rose-200',
     title: 'Payment Failed',
-    message: "The payment didn't go through, so the vendor was not hired. No charge was made — you can try again."
+    message: "The payment didn't go through, so the event was not created. No charge was made — you can try again."
   },
   cancelled: {
     icon: Ban,
     color: 'text-amber-600 bg-amber-50 border-amber-200',
     title: 'Payment Cancelled',
-    message: 'You cancelled the payment before it completed, so the vendor was not hired.'
+    message: 'You cancelled the payment before it completed, so the event was not created.'
   }
 };
 
-export default function VendorBookingResult() {
+// Mirrors VenueBookingResult.jsx / VendorBookingResult.jsx — the browser
+// lands here after SSLCommerz redirects back from the platform fee
+// checkout (see EventFlowContext#initiateEventCreationFee). The event
+// itself only exists server-side once payments.controller.js confirms the
+// payment, so this refetches rather than assuming anything client-side.
+export default function EventCreationResult() {
   const [searchParams] = useSearchParams();
   const { refreshEvents } = useEventFlow();
   const [refreshed, setRefreshed] = useState(false);
@@ -34,9 +39,6 @@ export default function VendorBookingResult() {
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.failed;
   const Icon = config.icon;
 
-  // Pulls the fresh event_vendors row set server-side on a successful
-  // payment — refreshing events also re-derives eventVendorBookings (see
-  // EventFlowContext.jsx), since this client never creates that row itself.
   useEffect(() => {
     refreshEvents().finally(() => setRefreshed(true));
   }, []);
@@ -55,10 +57,10 @@ export default function VendorBookingResult() {
 
         <div className="pt-4 border-t border-slate-100 flex items-center justify-center gap-3">
           <Link
-            to="/vendors"
+            to="/events"
             className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-[#1B3A5C] border border-slate-200 rounded-xl transition-colors"
           >
-            Back to Vendors
+            Back to My Events
           </Link>
           {eventId && (
             <Link

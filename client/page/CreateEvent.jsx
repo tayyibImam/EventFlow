@@ -1,13 +1,23 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Calendar, DollarSign, Users, Tag, Info, ArrowLeft, Check } from 'lucide-react';
+import { Calendar, DollarSign, Users, Tag, Info, ArrowLeft, Check, Wallet } from 'lucide-react';
 import { useEventFlow } from '../context/EventFlowContext';
 import FormInput from '../component/FormInput';
 import Button from '../component/Button';
 
+const PLATFORM_FEE_DISPLAY = '৳5,000';
+
 export default function CreateEvent() {
   const navigate = useNavigate();
-  const { categories, addEvent, currentProfile } = useEventFlow();
+  const { categories, addEvent, currentProfile, authToken, realUser, initiateEventCreationFee } = useEventFlow();
+
+  // Creating an event is gated behind EventFlow's flat platform convenience
+  // fee for a real, logged-in organizer session — paid via SSLCommerz, and
+  // the event only actually gets created once that payment clears (see
+  // EventFlowContext#initiateEventCreationFee). There's no real session to
+  // charge in demo/perspective-switcher mode, so that path stays the old
+  // free, instant creation.
+  const isPaidFlow = !!(authToken && realUser?.role === 'organizer');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -22,6 +32,7 @@ export default function CreateEvent() {
 
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -33,6 +44,7 @@ export default function CreateEvent() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setPaymentError('');
 
     const newErrors = {};
     if (!formData.title.trim()) newErrors.title = 'Event Title is required';
@@ -47,9 +59,7 @@ export default function CreateEvent() {
     // Resolve the picked name against the real category list — this select
     // is keyed by name, but the backend needs the real id.
     const matchedCategory = categories.find(c => c.name === formData.category);
-
-    setSubmitting(true);
-    const created = await addEvent({
+    const eventPayload = {
       title: formData.title,
       category: formData.category,
       categoryId: matchedCategory ? matchedCategory.id : null,
@@ -61,7 +71,22 @@ export default function CreateEvent() {
       expectedGuests: parseInt(formData.expectedGuests, 10) || 100,
       budget: formData.budget || '৳15,000',
       status: formData.status
-    });
+    };
+
+    setSubmitting(true);
+
+    if (isPaidFlow) {
+      try {
+        const { GatewayPageURL } = await initiateEventCreationFee(eventPayload);
+        window.location.href = GatewayPageURL;
+      } catch (err) {
+        setPaymentError(err.message || 'Could not start the payment session. Please try again.');
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    const created = await addEvent(eventPayload);
     setSubmitting(false);
 
     if (created?.id != null) {
@@ -70,13 +95,6 @@ export default function CreateEvent() {
   };
 
   const categoryOptions = categories.map(c => ({ value: c.name, label: c.name }));
-
-  const statusOptions = [
-    { value: "Planned", label: "Planned (Initial Planning Phase)" },
-    { value: "Ongoing", label: "Ongoing (Active Coordination)" },
-    { value: "Completed", label: "Completed" },
-    { value: "Cancelled", label: "Cancelled" }
-  ];
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-in fade-in duration-300">
@@ -110,30 +128,21 @@ export default function CreateEvent() {
             error={errors.title}
           />
 
-          {/* Category & Status */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <FormInput
-              id="create-event-category"
-              label="Event Category"
-              name="category"
-              type="select"
-              value={formData.category}
-              onChange={handleChange}
-              options={categoryOptions}
-              icon={Tag}
-            />
-
-            <FormInput
-              id="create-event-status"
-              label="Event Status"
-              name="status"
-              type="select"
-              value={formData.status}
-              onChange={handleChange}
-              options={statusOptions}
-              helperText="Planned/Ongoing/Completed switch automatically based on the event dates — only Cancelled sticks."
-            />
-          </div>
+          {/* Category — status isn't picked here; a brand-new event always
+              starts out Planned (see formData's initial state above), and
+              the display status recomputes from the event's own dates
+              everywhere else in the app (see computeDisplayStatus in
+              EventFlowContext). */}
+          <FormInput
+            id="create-event-category"
+            label="Event Category"
+            name="category"
+            type="select"
+            value={formData.category}
+            onChange={handleChange}
+            options={categoryOptions}
+            icon={Tag}
+          />
 
           {/* Description */}
           <FormInput
@@ -196,9 +205,32 @@ export default function CreateEvent() {
               onChange={handleChange}
               placeholder="e.g. ৳45,000"
               icon={DollarSign}
-              helperText="Informational planning estimation only. No payment gateway."
+              helperText="Informational planning estimation only — not charged. Separate from the platform fee below."
             />
           </div>
+
+          {/* Platform fee notice */}
+          {isPaidFlow ? (
+            <div className="p-4 bg-amber-50 rounded-xl border border-amber-200/70 flex items-start gap-3 text-xs text-amber-900">
+              <Wallet className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                <strong>Platform Convenience Fee:</strong> Creating an event costs a flat <strong>{PLATFORM_FEE_DISPLAY}</strong>, paid to EventFlow via SSLCommerz. Submitting below takes you to the secure payment page — your event is only created once that payment clears.
+              </p>
+            </div>
+          ) : (
+            <div className="p-4 bg-amber-50 rounded-xl border border-amber-200/70 flex items-start gap-3 text-xs text-amber-900">
+              <Wallet className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                <strong>Demo Mode:</strong> You're browsing without a real organizer account, so event creation here is free and instant. A real session is charged a flat {PLATFORM_FEE_DISPLAY} platform fee via SSLCommerz instead.
+              </p>
+            </div>
+          )}
+
+          {paymentError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-semibold">
+              {paymentError}
+            </div>
+          )}
 
           {/* Informational callout note */}
           <div className="p-4 bg-sky-50 rounded-xl border border-sky-200/70 flex items-start gap-3 text-xs text-[#1B3A5C]">
@@ -222,10 +254,12 @@ export default function CreateEvent() {
               id="btn-create-event-submit"
               type="submit"
               variant="primary"
-              icon={Check}
+              icon={isPaidFlow ? Wallet : Check}
               disabled={submitting}
             >
-              {submitting ? 'Creating...' : 'Create Event'}
+              {submitting
+                ? (isPaidFlow ? 'Redirecting to payment...' : 'Creating...')
+                : (isPaidFlow ? `Pay ${PLATFORM_FEE_DISPLAY} & Create Event` : 'Create Event')}
             </Button>
           </div>
         </form>

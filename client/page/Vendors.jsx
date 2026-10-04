@@ -160,11 +160,18 @@ export default function Vendors() {
               </div>
 
               <div className="p-3 bg-sky-50 border border-sky-200/70 rounded-xl text-xs text-[#1B3A5C] space-y-1">
-                <div className="flex justify-between font-bold">
-                  <span>Full payment due now</span>
-                  <strong>৳{(Number(hireTarget?.basePrice) || 0).toLocaleString()}</strong>
+                <div className="flex justify-between text-slate-600">
+                  <span>Agreed vendor price</span>
+                  <span>৳{(Number(hireTarget?.basePrice) || 0).toLocaleString()}</span>
                 </div>
-                <p className="text-[11px] text-slate-500 pt-1">You'll be redirected to SSLCommerz to pay the vendor in full. The vendor is only hired for this event once payment clears.</p>
+                <div className="flex justify-between font-bold">
+                  <span>Confirmation deposit due now (10%)</span>
+                  <strong>৳{(Math.round((Number(hireTarget?.basePrice) || 0) * 0.10 * 100) / 100).toLocaleString()}</strong>
+                </div>
+                <p className="text-[11px] text-slate-500 pt-1">
+                  You'll be redirected to SSLCommerz to pay the 10% deposit — the vendor is only hired for this event once it clears.
+                  The remaining 90% appears on your Payments tab after the event ends, and is due within 3 days.
+                </p>
               </div>
             </>
           )}
@@ -174,7 +181,7 @@ export default function Vendors() {
               Cancel
             </Button>
             <Button type="submit" variant="primary" size="sm" icon={Briefcase} disabled={hiring || events.length === 0}>
-              {hiring ? 'Redirecting to payment...' : 'Pay & Hire Vendor'}
+              {hiring ? 'Redirecting to payment...' : 'Pay Deposit & Hire Vendor'}
             </Button>
           </div>
         </form>

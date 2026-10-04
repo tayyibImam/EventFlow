@@ -11,6 +11,7 @@ import GuestLayout from '../layout/GuestLayout';
 import Dashboard from '../page/Dashboard';
 import Events from '../page/Events';
 import CreateEvent from '../page/CreateEvent';
+import EventCreationResult from '../page/EventCreationResult';
 import EventDetails from '../page/EventDetails';
 import Venues from '../page/Venues';
 import VenueBookingResult from '../page/VenueBookingResult';
@@ -21,6 +22,8 @@ import Tasks from '../page/Tasks';
 import Schedule from '../page/Schedule';
 import Feedback from '../page/Feedback';
 import StaffFeedback from '../page/StaffFeedback';
+import Payments from '../page/Payments';
+import BalancePaymentResult from '../page/BalancePaymentResult';
 import StaffTasks from '../page/StaffTasks';
 import Invitations from '../page/Invitations';
 import AdminDashboard from '../page/AdminDashboard';
@@ -29,6 +32,7 @@ import EventCategories from '../page/EventCategories';
 import AdminEvents from '../page/AdminEvents';
 import AdminVenues from '../page/AdminVenues';
 import AdminVendors from '../page/AdminVendors';
+import AdminCancellations from '../page/AdminCancellations';
 import Settings from '../page/Settings';
 import Landing from '../page/Landing';
 import AuthPlaceholder from '../page/AuthPlaceholder';
@@ -62,6 +66,7 @@ export default function AppRoutes() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/events" element={<Events />} />
         <Route path="/events/create" element={<CreateEvent />} />
+        <Route path="/events/booking-result" element={<EventCreationResult />} />
         <Route path="/events/:id" element={<EventDetails />} />
         <Route path="/venues" element={<Venues />} />
         <Route path="/venues/booking-result" element={<VenueBookingResult />} />
@@ -72,6 +77,8 @@ export default function AppRoutes() {
         <Route path="/schedule" element={<Schedule />} />
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/staff-feedback" element={<StaffFeedback />} />
+        <Route path="/payments" element={<Payments />} />
+        <Route path="/payments/booking-result" element={<BalancePaymentResult />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
 
@@ -91,6 +98,7 @@ export default function AppRoutes() {
         <Route path="events" element={<AdminEvents />} />
         <Route path="venues" element={<AdminVenues />} />
         <Route path="vendors" element={<AdminVendors />} />
+        <Route path="cancellations" element={<AdminCancellations />} />
         <Route path="settings" element={<Settings />} />
       </Route>
 

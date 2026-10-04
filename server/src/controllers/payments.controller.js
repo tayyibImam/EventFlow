@@ -3,12 +3,16 @@ const sslcommerz = require('../services/sslcommerz.service');
 
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 
-// tran_id is prefixed per booking type (see bookings.controller.js 'EVF-'
-// and vendorBookings.controller.js 'VND-') so a single shared set of
-// SSLCommerz callback routes can tell which ledger table — and which
-// post-payment side effect — a given transaction belongs to.
+// tran_id is prefixed per booking type (see bookings.controller.js 'EVF-',
+// vendorBookings.controller.js 'VND-', eventFees.controller.js 'FEE-' and
+// balancePayments.controller.js 'BAL-') so a single shared set of SSLCommerz
+// callback routes can tell which ledger table — and which post-payment side
+// effect — a given transaction belongs to.
 function tableFor(tranId) {
-  return tranId && tranId.startsWith('VND-') ? 'vendor_bookings' : 'venue_bookings';
+  if (tranId && tranId.startsWith('VND-')) return 'vendor_bookings';
+  if (tranId && tranId.startsWith('FEE-')) return 'event_creation_fees';
+  if (tranId && tranId.startsWith('BAL-')) return 'balance_payments';
+  return 'venue_bookings';
 }
 
 async function loadBooking(tranId) {
@@ -21,7 +25,10 @@ async function loadBooking(tranId) {
 function redirectToResult(res, status, booking) {
   const params = new URLSearchParams({ status });
   if (booking?.event_id != null) params.set('eventId', booking.event_id);
-  const base = booking?._table === 'vendor_bookings' ? 'vendors' : 'venues';
+  const base = booking?._table === 'vendor_bookings' ? 'vendors'
+    : booking?._table === 'event_creation_fees' ? 'events'
+    : booking?._table === 'balance_payments' ? 'payments'
+    : 'venues';
   res.redirect(`${CLIENT_URL}/${base}/booking-result?${params.toString()}`);
 }
 
@@ -33,7 +40,12 @@ function redirectToResult(res, status, booking) {
 async function confirmPaidBooking(booking, valId) {
   if (booking.status === 'paid') return booking;
 
-  const chargedAmount = booking._table === 'vendor_bookings' ? booking.agreed_price : booking.deposit_amount;
+  // The fee and balance ledgers carry the exact figure charged in `amount`;
+  // venue and vendor bookings both charge their 10% `deposit_amount` up
+  // front (the other 90% is settled later through balance_payments).
+  const chargedAmount = (booking._table === 'event_creation_fees' || booking._table === 'balance_payments')
+    ? booking.amount
+    : booking.deposit_amount;
 
   const validation = await sslcommerz.validatePayment(valId);
   const isValid = validation && (validation.status === 'VALID' || validation.status === 'VALIDATED');
@@ -50,16 +62,41 @@ async function confirmPaidBooking(booking, valId) {
   );
 
   if (booking._table === 'vendor_bookings') {
-    // The vendor is only actually attached to the event once the full
-    // payment clears — this INSERT is the one and only place event_vendors
-    // gets a row for a hire (see eventVendors.controller.js, which no
-    // longer exposes a free/unpaid way to create one).
+    // The vendor is only actually attached to the event once its 10%
+    // confirmation deposit clears — this INSERT is the one and only place
+    // event_vendors gets a row for a hire (see eventVendors.controller.js,
+    // which no longer exposes a free/unpaid way to create one). The row
+    // records the full agreed_price, which is what the hire is contracted
+    // at; the outstanding 90% is tracked through balance_payments.
     await pool.query(
       `INSERT INTO event_vendors (event_id, vendor_id, agreed_price, status)
        VALUES (?, ?, ?, 'confirmed')
        ON DUPLICATE KEY UPDATE agreed_price = VALUES(agreed_price), status = 'confirmed'`,
       [booking.event_id, booking.vendor_id, booking.agreed_price]
     );
+  } else if (booking._table === 'balance_payments') {
+    // Nothing structural to do — the venue was already assigned and the
+    // vendor already confirmed by their deposit. Marking this row 'paid'
+    // above is itself what drops the booking off the organizer's
+    // outstanding list (and the admin's overdue list), since both are
+    // derived from the absence of a settled balance_payments row.
+  } else if (booking._table === 'event_creation_fees') {
+    // The event doesn't exist until the platform fee actually clears — this
+    // INSERT is the one and only place an event created through the
+    // organizer's "Create Event" form gets a row in `events` (see
+    // eventFees.controller.js#initiateEventFee, which only ever stashes the
+    // submitted fields as JSON). mysql2 auto-parses a JSON column into a JS
+    // object already — no JSON.parse needed (and calling it on an object
+    // would throw).
+    const payload = booking.payload;
+    const [eventResult] = await pool.query(
+      `INSERT INTO events (title, description, category_id, organizer_id, venue_id, start_datetime, end_datetime, status, budget)
+       VALUES (?, ?, ?, ?, NULL, ?, ?, 'planned', ?)`,
+      [payload.title, payload.description || null, payload.category_id || null, booking.organizer_id,
+       payload.start_datetime, payload.end_datetime, payload.budget || 0]
+    );
+    await pool.query(`UPDATE event_creation_fees SET event_id = ? WHERE booking_id = ?`, [eventResult.insertId, booking.booking_id]);
+    booking.event_id = eventResult.insertId;
   } else {
     // Reassigning a venue supersedes any previously paid booking for this
     // same event — without this, the old venue's row stays 'paid' forever

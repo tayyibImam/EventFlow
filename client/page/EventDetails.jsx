@@ -22,7 +22,9 @@ import {
   Star,
   Link2,
   Check,
-  Loader2
+  Loader2,
+  Ban,
+  Hourglass
 } from 'lucide-react';
 import { useEventFlow } from '../context/EventFlowContext';
 import StatusBadge from '../component/StatusBadge';
@@ -70,7 +72,11 @@ export default function EventDetails() {
     removeVendorFromEvent,
     checkVenueAvailability,
     initiateVenueBooking,
-    getEventProgress
+    getEventProgress,
+    cancellationRequests,
+    requestEventCancellation,
+    authToken,
+    realUser
   } = useEventFlow();
 
   // Find targeted event or fallback to the first one
@@ -96,6 +102,10 @@ export default function EventDetails() {
   const [hiringVendor, setHiringVendor] = useState(false);
   const [inviteLinkResult, setInviteLinkResult] = useState(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelError, setCancelError] = useState('');
+  const [submittingCancel, setSubmittingCancel] = useState(false);
 
   // Forms state
   const [guestForm, setGuestForm] = useState({
@@ -188,6 +198,36 @@ export default function EventDetails() {
 
   const currentVenue = venues.find(v => v.id === event.venueId || v.name === event.venue) || null;
   const progress = getEventProgress(event.id);
+
+  // Cancellation is request-based: this page can only ever *ask*. The event's
+  // status is changed server-side when an admin approves (see
+  // cancellationRequests.controller.js), never from here.
+  const eventRequests = cancellationRequests.filter(r => String(r.eventId) === String(event.id));
+  const pendingCancellation = eventRequests.find(r => r.status === 'pending') || null;
+  const lastRejectedCancellation = !pendingCancellation
+    ? eventRequests.find(r => r.status === 'rejected') || null
+    : null;
+  const eventHasEnded = event.endDate ? new Date() > new Date(event.endDate) : false;
+  const canRequestCancellation =
+    !!(authToken && realUser?.role === 'organizer') &&
+    event.status !== 'Cancelled' &&
+    !eventHasEnded &&
+    !pendingCancellation;
+
+  const handleRequestCancellation = async (e) => {
+    e.preventDefault();
+    setCancelError('');
+    setSubmittingCancel(true);
+    try {
+      await requestEventCancellation(event.id, cancelReason.trim());
+      setIsCancelModalOpen(false);
+      setCancelReason('');
+    } catch (err) {
+      setCancelError(err.message || 'Could not submit the cancellation request.');
+    } finally {
+      setSubmittingCancel(false);
+    }
+  };
 
   // Guest stats
   const totalGuests = eventGuests.length;
@@ -393,6 +433,53 @@ export default function EventDetails() {
                 <span>{event.expectedGuests} Expected Guests</span>
               </div>
             </div>
+
+            {/* Cancellation — request only. An organizer can ask; only an
+                admin's approval actually cancels the event. */}
+            {event.status === 'Cancelled' ? (
+              <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2 text-xs">
+                <Ban className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <p className="text-rose-800">
+                  <strong>This event is cancelled.</strong> It no longer appears in active planning or payment lists.
+                </p>
+              </div>
+            ) : pendingCancellation ? (
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-xs">
+                <Hourglass className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <div className="text-amber-900">
+                  <p><strong>Cancellation requested — awaiting admin review.</strong></p>
+                  <p className="text-[11px] mt-0.5 text-amber-800">
+                    Your reason: "{pendingCancellation.reason}" — the event stays active until an admin approves it.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {lastRejectedCancellation && (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2 text-xs">
+                    <Ban className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                    <div className="text-slate-600">
+                      <p><strong className="text-slate-700">A previous cancellation request was declined.</strong></p>
+                      {lastRejectedCancellation.reviewNote && (
+                        <p className="text-[11px] mt-0.5">Admin note: "{lastRejectedCancellation.reviewNote}"</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {canRequestCancellation && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={Ban}
+                    onClick={() => { setCancelError(''); setIsCancelModalOpen(true); }}
+                    className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200"
+                    id="btn-request-cancellation"
+                  >
+                    {lastRejectedCancellation ? 'Request Cancellation Again' : 'Request Cancellation'}
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Quick Progress Dial / Overall Readiness */}
@@ -1177,11 +1264,18 @@ export default function EventDetails() {
               </div>
 
               <div className="p-3 bg-sky-50 border border-sky-200/70 rounded-xl text-xs text-[#1B3A5C] space-y-1">
-                <div className="flex justify-between font-bold">
-                  <span>Full payment due now</span>
-                  <strong>৳{(Number(selectedHireVendor?.basePrice) || 0).toLocaleString()}</strong>
+                <div className="flex justify-between text-slate-600">
+                  <span>Agreed vendor price</span>
+                  <span>৳{(Number(selectedHireVendor?.basePrice) || 0).toLocaleString()}</span>
                 </div>
-                <p className="text-[11px] text-slate-500 pt-1">You'll be redirected to SSLCommerz to pay the vendor in full. The vendor is only hired for this event once payment clears.</p>
+                <div className="flex justify-between font-bold">
+                  <span>Confirmation deposit due now (10%)</span>
+                  <strong>৳{(Math.round((Number(selectedHireVendor?.basePrice) || 0) * 0.10 * 100) / 100).toLocaleString()}</strong>
+                </div>
+                <p className="text-[11px] text-slate-500 pt-1">
+                  You'll be redirected to SSLCommerz to pay the 10% deposit — the vendor is only hired for this event once it clears.
+                  The remaining 90% appears on your Payments tab after the event ends, and is due within 3 days.
+                </p>
               </div>
             </>
           )}
@@ -1241,6 +1335,64 @@ export default function EventDetails() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Cancellation request — the organizer submits a reason for an admin
+          to review. Approving it (from the admin's Cancellations queue) is
+          what actually cancels the event; nothing changes here. */}
+      <Modal
+        isOpen={isCancelModalOpen}
+        onClose={() => setIsCancelModalOpen(false)}
+        title="Request Event Cancellation"
+        subtitle="An admin reviews every request before an event is cancelled"
+        id="cancel-request-modal"
+      >
+        <form onSubmit={handleRequestCancellation} className="space-y-4">
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+            <p className="text-xs font-bold text-slate-800">{event.title}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {formatDate(event.startDate)}
+              {event.endDate && event.endDate !== event.startDate && ` — ${formatDate(event.endDate)}`}
+            </p>
+          </div>
+
+          {cancelError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-semibold">
+              {cancelError}
+            </div>
+          )}
+
+          <FormInput
+            label="Why does this event need to be cancelled?"
+            type="textarea"
+            rows={4}
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            placeholder="e.g. The main sponsor withdrew and we can't cover the venue cost, so the event can't go ahead."
+            helperText="Be specific — the admin team approves or declines based on this. Minimum 15 characters."
+            required
+          />
+
+          <div className="p-3 bg-amber-50 border border-amber-200/70 rounded-xl text-[11px] text-amber-900 leading-relaxed">
+            Submitting this does <strong>not</strong> cancel the event. It stays active — including any guest
+            invitations, staff tasks and outstanding payments — until an admin approves the request.
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+            <Button variant="outline" size="sm" type="button" onClick={() => setIsCancelModalOpen(false)} disabled={submittingCancel}>
+              Keep Event
+            </Button>
+            <Button
+              type="submit"
+              variant="danger"
+              size="sm"
+              icon={Ban}
+              disabled={submittingCancel || cancelReason.trim().length < 15}
+            >
+              {submittingCancel ? 'Submitting...' : 'Submit Request'}
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

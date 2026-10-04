@@ -30,7 +30,7 @@ async function getInvitationByToken(req, res) {
 
     const [rows] = await pool.query(
       `SELECT
-         eg.event_guest_id, eg.rsvp_status, eg.token,
+         eg.event_guest_id, eg.rsvp_status, eg.rsvp_locked, eg.token,
          g.guest_id, g.name AS guest_name, g.email AS guest_email, g.phone AS guest_phone,
          e.event_id, e.title, e.description, e.start_datetime, e.end_datetime, e.status AS event_status,
          v.name AS venue_name, v.address AS venue_address, v.city AS venue_city
@@ -53,7 +53,21 @@ async function getInvitationByToken(req, res) {
   }
 }
 
-// PUT /api/rsvp/:token — guest updates their own RSVP
+// PUT /api/rsvp/:token — guest updates their own RSVP. Once a guest
+// themselves submits accepted/declined here, that choice is locked in —
+// they can never flip to the other one afterwards, so a confirmed headcount
+// can't quietly change after the fact. Enforced here, not just in the UI,
+// since this route is unauthenticated (the token is the only credential).
+//
+// The lock is tracked by `rsvp_locked`, separate from `rsvp_status` itself,
+// because autoDeclineStale() below also sets rsvp_status='declined' for a
+// guest who simply never responded — that's a system default, not the
+// guest's own decision, so it must NOT lock them out of responding for real
+// once they do show up on the link.
+//
+// Organizers can still override either way from the Guests page (see
+// eventGuests.controller.js#updateRsvp), a separate, deliberately
+// unrestricted endpoint that never touches this lock.
 async function updateRsvpByToken(req, res) {
   try {
     const { token } = req.params;
@@ -69,7 +83,20 @@ async function updateRsvpByToken(req, res) {
       return res.status(404).json({ error: 'Invitation not found' });
     }
 
-    await pool.query('UPDATE event_guests SET rsvp_status = ? WHERE token = ?', [rsvp_status, token]);
+    const current = existing[0];
+    if (current.rsvp_locked && rsvp_status !== current.rsvp_status) {
+      return res.status(409).json({
+        error: `You already ${current.rsvp_status} this invitation and can't change your response. Contact the organizer if you need this corrected.`
+      });
+    }
+
+    // Locks in as soon as the guest makes a real choice — 'no_response' is
+    // never sent by the UI, but if it ever is, it doesn't count as a choice.
+    const locksIn = rsvp_status === 'accepted' || rsvp_status === 'declined';
+    await pool.query(
+      'UPDATE event_guests SET rsvp_status = ?, rsvp_locked = rsvp_locked OR ? WHERE token = ?',
+      [rsvp_status, locksIn, token]
+    );
     const [updated] = await pool.query('SELECT * FROM event_guests WHERE token = ?', [token]);
     res.json(updated[0]);
   } catch (err) {

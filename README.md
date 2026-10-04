@@ -62,8 +62,10 @@ EventFlow solves this by bringing venues, vendors, guests, tasks, and schedules 
 - **Event Schedule / Agenda** — Build a simple timeline of event-day activities with start/end times and notes per segment.
 - **Guest Feedback** — After the event, guests can rate their experience (1–5) and leave a comment.
 - **Email Invites** — Guests get a branded HTML invite email (event name, date, time, venue, and a direct RSVP link); without real SMTP credentials configured it still "sends" via a console-logged preview link.
-- **Venue & Vendor Payments** — Venue bookings take a 10% deposit and vendor hires are paid in full, both through SSLCommerz (sandbox-ready, no real money needed for local dev).
+- **Venue & Vendor Payments** — Venue bookings and vendor hires both take a 10% confirmation deposit up front through SSLCommerz (sandbox-ready, no real money needed for local dev), with the remaining 90% settled after the event.
+- **Post-Event Settlement** — The outstanding 90% on each venue/vendor lands on the organizer's **Payments** tab when the event ends and is due within 3 days; past that it's automatically flagged on the admin dashboard and emailed to the admins.
 - **Staff Task Feedback** — Staff can leave a progress or completion note on their own tasks; organizers review every note on a dedicated tab and mark it read.
+- **Request-Based Event Cancellation** — Organizers can't cancel their own events. They file a request with a reason, and an event is only ever marked cancelled once an admin approves it from the **Cancellations** queue (both sides get emailed).
 
 ## User Roles
 
@@ -80,38 +82,41 @@ EventFlow solves this by bringing venues, vendors, guests, tasks, and schedules 
 |---|---|
 | **Frontend** | React.js, HTML5, CSS3, Tailwind CSS |
 | **Backend** | Node.js with Express.js (REST API) |
-| **Database** | MySQL 8.0+ — 14-table, 3NF relational schema |
+| **Database** | MySQL 8.0+ — 17-table, 3NF relational schema |
 | **UI / UX Design** | Figma — wireframes, UI kit, high-fidelity prototypes |
 | **Version Control** | GitHub — repository, branches, pull requests, project board |
 | **Deployment** | Vercel (frontend + CI/CD) |
 
 ## Database Schema
 
-The system is built around a relational MySQL schema, now **14 tables** (`server/sql/schema.sql` is the source of truth — it's grown since the diagram below was drawn, adding `task_feedback` for staff progress/completion notes, plus `venue_bookings`/`vendor_bookings` as the SSLCommerz payment ledger behind venue deposits and vendor hires). The `events` table sits at the center of the schema; every other table connects back to it, either directly (1:M) or through a junction table (M:N).
+The system is built around a relational MySQL schema of **17 tables and 27 foreign keys**, with `events` at the centre — every other table connects back to it, either directly (1:M) or through a junction table (M:N).
 
-<div align="center">
-  <img src="docs/erd/EventFlow_ERD.png" alt="EventFlow Entity Relationship Diagram" width="800">
-</div>
+| Document | What's in it |
+|---|---|
+| **[`docs/erd/EventFlow_ERD.md`](docs/erd/EventFlow_ERD.md)** | The full entity-relationship diagram (renders inline on GitHub), plus design notes |
+| **[`docs/erd/EventFlow_ERD.mmd`](docs/erd/EventFlow_ERD.mmd)** | Mermaid source for the same diagram — paste into [mermaid.live](https://mermaid.live) to export a PNG/SVG for a report |
+| **[`docs/schema/EventFlow_Schema.md`](docs/schema/EventFlow_Schema.md)** | Column-level reference: every type, default, key, index and `ON DELETE` rule |
+| [`server/sql/schema.sql`](server/sql/schema.sql) | The source of truth — the file you actually run |
+
+Both documents are generated from a live introspection of the database, so they match `schema.sql` exactly.
 
 <details>
-<summary><strong>Relationship summary</strong></summary>
+<summary><strong>Table groups at a glance</strong></summary>
 
-| Relationship | Type | Notes |
-|---|:---:|---|
-| `users` → `events` | 1:M | One organizer creates many events |
-| `users` → `tasks` | 1:M | One staff member is assigned many tasks |
-| `categories` → `events` | 1:M | One category applies to many events |
-| `venues` → `events` | 1:M | One venue hosts many events, at different times |
-| `events` ↔ `vendors` | M:N | Via `event_vendors` — agreed price & booking status per pair |
-| `events` ↔ `guests` | M:N | Via `event_guests` — RSVP status per pair |
-| `events` → `tasks` | 1:M | One event has many planning tasks |
-| `events` → `event_schedule` | 1:M | One event has many agenda items |
-| `events` → `feedback` | 1:M | One event receives many feedback entries |
-| `guests` → `feedback` | 1:M | One guest can leave feedback on multiple events |
+| Group | Tables |
+|---|---|
+| **Reference & identity** | `users`, `venues`, `vendors`, `categories`, `guests` |
+| **Core record** | `events` |
+| **Event dependents & junctions** | `event_guests`, `event_vendors`, `tasks`, `task_feedback`, `event_schedule`, `feedback` |
+| **Payment ledgers & workflow** | `venue_bookings`, `vendor_bookings`, `balance_payments`, `event_creation_fees`, `event_cancellation_requests` |
+
+Key design points: guests are deliberately **not** users (they act only through a random per-invite RSVP token); the two M:N pairs are `events`↔`guests` via `event_guests` and `events`↔`vendors` via `event_vendors`; and all four payment ledgers share one SSLCommerz transaction shape.
 
 </details>
 
-Full column-level definitions (types, constraints, foreign keys) live in [`docs/schema/EventFlow_Database_Schema_Design.docx`](docs/schema/EventFlow_Database_Schema_Design.docx).
+> The original hand-drawn diagram — [`docs/erd/EventFlow_ERD.png`](docs/erd/EventFlow_ERD.png) and
+> [`docs/schema/EventFlow_Database_Schema_Design.docx`](docs/schema/EventFlow_Database_Schema_Design.docx) —
+> captures the initial 11-table design and is kept for reference; the generated documents above are current.
 
 ## Project Structure
 
@@ -140,8 +145,8 @@ eventflow/
 │   ├── sql/                    # schema.sql, seed.sql
 │   └── package.json
 ├── docs/
-│   ├── erd/                  # entity relationship diagram
-│   └── schema/                # database schema design doc
+│   ├── erd/                  # ERD: EventFlow_ERD.md (rendered) + .mmd (source)
+│   └── schema/                # column-level schema reference
 ├── package.json              # root dev convenience — runs client + server together, not a workspace
 └── README.md
 ```
@@ -189,7 +194,7 @@ Get-Content server\sql\seed.sql | mysql -u root -p eventflow
 
 Each `mysql` call prompts for your MySQL root password interactively. If `mysql` isn't recognized as a command, either add MySQL's `bin` folder to your PATH (on Windows, typically `C:\Program Files\MySQL\MySQL Server 8.0\bin`) and restart your terminal, or call the full path to `mysql.exe`/`mysql` instead.
 
-`schema.sql` creates all 14 tables. `seed.sql` truncates them first (safe on a freshly-created database) and inserts a small set of demo data — 3 user accounts, 2 categories, a venue, a vendor, 2 guests, 1 event, and 1 task — so the app has something to show immediately and so you can log in right away (see [step 5](#5-log-in) below). You can skip the `seed.sql` step if you'd rather start from a completely empty database.
+`schema.sql` creates all 17 tables. `seed.sql` truncates them first (safe on a freshly-created database) and inserts a small set of demo data — 3 user accounts, 2 categories, a venue, a vendor, 2 guests, 1 event, and 1 task — so the app has something to show immediately and so you can log in right away (see [step 5](#5-log-in) below). You can skip the `seed.sql` step if you'd rather start from a completely empty database.
 
 ### 3. Configure the server's environment variables
 

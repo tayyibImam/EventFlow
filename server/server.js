@@ -34,6 +34,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const eventsRoutes = require('./src/routes/events.routes');
+const eventFeesRoutes = require('./src/routes/eventFees.routes');
 const authRoutes = require('./src/routes/auth.routes');
 const categoriesRoutes = require('./src/routes/categories.routes');
 const venuesRoutes = require('./src/routes/venues.routes');
@@ -50,6 +51,8 @@ const rsvpRoutes = require('./src/routes/rsvp.routes');
 const bookingsRoutes = require('./src/routes/bookings.routes');
 const vendorBookingsRoutes = require('./src/routes/vendorBookings.routes');
 const paymentsRoutes = require('./src/routes/payments.routes');
+const balancePaymentsRoutes = require('./src/routes/balancePayments.routes');
+const cancellationRequestsRoutes = require('./src/routes/cancellationRequests.routes');
 
 
 const app = express();
@@ -60,6 +63,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/events', eventsRoutes);
+app.use('/api/events/fee', eventFeesRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/venues', venuesRoutes);
@@ -76,6 +80,8 @@ app.use('/api/rsvp', rsvpRoutes);
 app.use('/api/venues/:venueId', bookingsRoutes);
 app.use('/api/vendors/:vendorId', vendorBookingsRoutes);
 app.use('/api/payments/sslcommerz', paymentsRoutes);
+app.use('/api/payments/balances', balancePaymentsRoutes);
+app.use('/api/cancellation-requests', cancellationRequestsRoutes);
 
 
 app.get('/', (req, res) => res.send('EventFlow API is running'));

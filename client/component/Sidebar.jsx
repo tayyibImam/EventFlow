@@ -11,6 +11,8 @@ import {
   Clock,
   MessageSquare,
   ClipboardCheck,
+  Wallet,
+  Ban,
   Settings,
   HelpCircle,
   FolderTree,
@@ -47,7 +49,8 @@ export default function Sidebar({ isOpen, onClose }) {
           { name: 'Event Categories', path: '/admin/categories', icon: FolderTree },
           { name: 'All Events', path: '/admin/events', icon: CalendarDays },
           { name: 'Venues', path: '/admin/venues', icon: MapPin },
-          { name: 'Vendors', path: '/admin/vendors', icon: Store }
+          { name: 'Vendors', path: '/admin/vendors', icon: Store },
+          { name: 'Cancellations', path: '/admin/cancellations', icon: Ban }
         ];
       case 'staff':
         // /events and /schedule are the organizer's own pages — a real staff
@@ -74,6 +77,7 @@ export default function Sidebar({ isOpen, onClose }) {
           { name: 'Guests', path: '/guests', icon: Users },
           { name: 'Tasks', path: '/tasks', icon: CheckSquare },
           { name: 'Schedule', path: '/schedule', icon: Clock },
+          { name: 'Payments', path: '/payments', icon: Wallet },
           { name: 'Feedback', path: '/feedback', icon: MessageSquare },
           { name: 'Staff Feedback', path: '/staff-feedback', icon: ClipboardCheck }
         ];

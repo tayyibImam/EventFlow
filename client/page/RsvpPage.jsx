@@ -59,9 +59,12 @@ export default function RsvpPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rsvp_status: status })
       });
-      if (!res.ok) throw new Error('Could not update your RSVP. Please try again.');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Could not update your RSVP. Please try again.');
+      }
       const updated = await res.json();
-      setInvite((prev) => ({ ...prev, rsvp_status: updated.rsvp_status }));
+      setInvite((prev) => ({ ...prev, rsvp_status: updated.rsvp_status, rsvp_locked: updated.rsvp_locked }));
     } catch (err) {
       setRsvpError(err.message);
     } finally {
@@ -70,11 +73,16 @@ export default function RsvpPage() {
     }
   };
 
-  // Switching straight from Accepted to Declined (or back) is the exact
-  // mistake a confirmation guards against — a stray tap shouldn't silently
-  // flip a guest's seat status, so both buttons route through this instead
-  // of calling handleRsvp directly.
+  // Once a guest has made a real choice (accepted or declined), it's locked
+  // in and they can no longer switch to the other one — the server enforces
+  // this too, since this page is unauthenticated (see
+  // rsvp.controller.js#updateRsvpByToken). Routes through a confirmation
+  // modal so a stray tap on this *first* response doesn't silently lock in
+  // the wrong answer. Checking `rsvp_locked` rather than the status itself
+  // matters here: a non-responder who got auto-declined by the deadline
+  // sweep isn't locked, and can still respond for real.
   const requestRsvp = (status) => {
+    if (invite.rsvp_locked) return;
     if (mapRsvpDisplay(invite.rsvp_status).toLowerCase() === status) return;
     setPendingRsvp(status);
   };
@@ -125,6 +133,7 @@ export default function RsvpPage() {
   }
 
   const rsvpStatus = mapRsvpDisplay(invite.rsvp_status);
+  const isLocked = !!invite.rsvp_locked;
   const eventHasStarted = invite.start_datetime
     ? new Date() >= new Date(invite.start_datetime.replace(' ', 'T'))
     : false;
@@ -179,17 +188,23 @@ export default function RsvpPage() {
             </div>
           )}
 
-          {!eventHasStarted && rsvpDeadlinePassed && rsvpStatus !== 'Accepted' && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-semibold">
-              The RSVP deadline (1 day before the event) has passed — unconfirmed guests are automatically marked Declined. You can still respond below.
+          {isLocked ? (
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 text-xs font-semibold">
+              Your response has been recorded as <strong className={rsvpStatus === 'Accepted' ? 'text-emerald-700' : 'text-rose-700'}>{rsvpStatus}</strong> and can't be changed. Contact the organizer if you need this corrected.
             </div>
+          ) : (
+            !eventHasStarted && rsvpDeadlinePassed && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-semibold">
+                The RSVP deadline (1 day before the event) has passed — unconfirmed guests are automatically marked Declined. You can still respond below.
+              </div>
+            )
           )}
 
           <div className="flex gap-3">
             <Button
               variant={rsvpStatus === 'Accepted' ? 'primary' : 'outline'}
               icon={CheckCircle2}
-              disabled={updating}
+              disabled={updating || isLocked}
               onClick={() => requestRsvp('accepted')}
             >
               Accept
@@ -197,7 +212,7 @@ export default function RsvpPage() {
             <Button
               variant={rsvpStatus === 'Declined' ? 'danger' : 'outline'}
               icon={XCircle}
-              disabled={updating}
+              disabled={updating || isLocked}
               onClick={() => requestRsvp('declined')}
             >
               Decline
@@ -263,8 +278,10 @@ export default function RsvpPage() {
         </p>
       </div>
 
-      {/* RSVP confirmation — guards against an accidental tap flipping an
-          already-set Accept/Decline, especially when switching between them. */}
+      {/* RSVP confirmation — guards against an accidental tap locking in the
+          wrong answer. Only ever reachable before a guest has locked in a
+          real response (see requestRsvp), so there's no "switching" case to
+          word here — whichever button opened this is their first choice. */}
       <Modal
         isOpen={!!pendingRsvp}
         onClose={() => setPendingRsvp(null)}
@@ -273,17 +290,10 @@ export default function RsvpPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
-            {rsvpStatus === 'Accepted' && pendingRsvp === 'declined' && (
-              <>You previously accepted this invitation. Are you sure you want to change your RSVP to <strong className="text-rose-600">Declined</strong>?</>
-            )}
-            {rsvpStatus === 'Declined' && pendingRsvp === 'accepted' && (
-              <>You previously declined this invitation. Are you sure you want to change your RSVP to <strong className="text-emerald-600">Accepted</strong>?</>
-            )}
-            {rsvpStatus !== 'Accepted' && rsvpStatus !== 'Declined' && pendingRsvp === 'accepted' && (
-              <>Confirm that you'll be <strong className="text-emerald-600">attending</strong> this event.</>
-            )}
-            {rsvpStatus !== 'Accepted' && rsvpStatus !== 'Declined' && pendingRsvp === 'declined' && (
-              <>Confirm that you'll <strong className="text-rose-600">not be attending</strong> this event.</>
+            {pendingRsvp === 'accepted' ? (
+              <>Confirm that you'll be <strong className="text-emerald-600">attending</strong> this event. This can't be changed afterwards.</>
+            ) : (
+              <>Confirm that you'll <strong className="text-rose-600">not be attending</strong> this event. This can't be changed afterwards.</>
             )}
           </p>
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">

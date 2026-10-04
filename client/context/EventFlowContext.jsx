@@ -564,6 +564,18 @@ export function EventFlowProvider({ children }) {
   const [taskFeedbackRaw, setTaskFeedbackRaw] = useState([]);
   const [taskFeedbackLoading, setTaskFeedbackLoading] = useState(true);
 
+  // Remaining 90% owed on venue/vendor bookings of finished events, and the
+  // admin-facing overdue slice of the same data. Both are server-derived and
+  // real-session only (see refreshOutstandingPayments below) — nothing to
+  // fall back to offline, so they start empty rather than from mock data.
+  const [outstandingPayments, setOutstandingPayments] = useState([]);
+  const [outstandingPaymentsLoading, setOutstandingPaymentsLoading] = useState(true);
+  const [overduePaymentAlerts, setOverduePaymentAlerts] = useState([]);
+
+  // Event cancellation requests — an organizer's own history, or the full
+  // review queue when an admin is signed in (see refreshCancellationRequests).
+  const [cancellationRequests, setCancellationRequests] = useState([]);
+
   const [users, setUsers] = useState(() => {
     const saved = localStorage.getItem('eventflow_users');
     return saved ? JSON.parse(saved) : initialUsers;
@@ -1277,6 +1289,16 @@ export function EventFlowProvider({ children }) {
   const addTaskFeedback = async (form) => {
     const staffId = realUser?.user_id;
 
+    // Once a task is Done — whether that happened via a prior "Completed"
+    // note or the organizer setting it directly — no further feedback of
+    // any stage can be added. Checked client-side too (not just the
+    // server's own check below) so the demo/local-only path enforces it as
+    // well, since that path never talks to the server at all.
+    const targetTask = tasks.find(t => t.id === form.taskId);
+    if (targetTask?.status === 'Done') {
+      throw new Error('This task is already marked Done — no further feedback can be added.');
+    }
+
     if (!staffId) {
       // Demo/perspective-switcher mode — no real backend staff account to
       // attach this to, so it stays local-only, same as other mock domains.
@@ -1290,6 +1312,9 @@ export function EventFlowProvider({ children }) {
         date: new Date().toISOString().split('T')[0]
       };
       setTaskFeedbackRaw(prev => [tfObj, ...prev]);
+      if (form.stage === 'Completed') {
+        setTasks(prev => prev.map(t => t.id === form.taskId ? { ...t, status: 'Done' } : t));
+      }
       addActivity({
         title: "Task feedback submitted",
         description: `${currentProfile.name} left feedback on a task`,
@@ -1298,8 +1323,14 @@ export function EventFlowProvider({ children }) {
       return tfObj;
     }
 
+    // A network failure (API unreachable) falls back to a local-only save,
+    // same as every other mock domain here — but a real response from the
+    // server (e.g. the 409 for "already submitted completion feedback on
+    // this task") is a deliberate rejection, not something to silently work
+    // around by faking a duplicate local entry, so that case throws instead.
+    let res;
     try {
-      const res = await fetch(`${API_URL}/task-feedback`, {
+      res = await fetch(`${API_URL}/task-feedback`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1312,19 +1343,8 @@ export function EventFlowProvider({ children }) {
           comment: form.comment
         })
       });
-      if (!res.ok) throw new Error('Failed to submit task feedback');
-      const tfObj = mapTaskFeedbackFromApi(await res.json());
-      setTaskFeedbackRaw(prev => [tfObj, ...prev]);
-
-      const task = tasks.find(t => t.id === form.taskId);
-      addActivity({
-        title: "Task feedback submitted",
-        description: `${realUser.name} left feedback on "${task?.title || 'a task'}"`,
-        type: "task"
-      });
-      return tfObj;
-    } catch (err) {
-      console.error('addTaskFeedback: could not reach the API, saving locally only:', err);
+    } catch (networkErr) {
+      console.error('addTaskFeedback: could not reach the API, saving locally only:', networkErr);
       const tfObj = {
         id: `tfb-${Date.now()}`,
         taskId: form.taskId,
@@ -1337,6 +1357,26 @@ export function EventFlowProvider({ children }) {
       setTaskFeedbackRaw(prev => [tfObj, ...prev]);
       return tfObj;
     }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to submit task feedback');
+    }
+
+    const raw = await res.json();
+    const tfObj = mapTaskFeedbackFromApi(raw);
+    setTaskFeedbackRaw(prev => [tfObj, ...prev]);
+
+    if (raw.task_status === 'done') {
+      setTasks(prev => prev.map(t => t.id === form.taskId ? { ...t, status: 'Done' } : t));
+    }
+
+    addActivity({
+      title: "Task feedback submitted",
+      description: `${realUser.name} left feedback on "${targetTask?.title || 'a task'}"`,
+      type: "task"
+    });
+    return tfObj;
   };
 
   // Organizer marking a staff note as read on the Staff Feedback tab — a
@@ -1356,6 +1396,198 @@ export function EventFlowProvider({ children }) {
     } catch (err) {
       console.error('markTaskFeedbackRead: could not reach the API, kept local change only:', err);
     }
+  };
+
+  // Post-event settlement of the remaining 90% owed on venue bookings and
+  // vendor hires. The outstanding list is derived server-side from paid
+  // deposits on finished events (see balancePayments.controller.js), so it's
+  // always fetched rather than cached-and-mutated — and it needs a real
+  // organizer session, since there's nothing to owe in demo mode.
+  const refreshOutstandingPayments = async () => {
+    if (!authToken || realUser?.role !== 'organizer') {
+      setOutstandingPayments([]);
+      setOutstandingPaymentsLoading(false);
+      return [];
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/payments/balances/outstanding`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (!res.ok) throw new Error('Failed to load outstanding payments');
+      const rows = await res.json();
+      setOutstandingPayments(rows);
+      return rows;
+    } catch (err) {
+      console.warn('Could not load outstanding payments:', err.message);
+      return [];
+    } finally {
+      setOutstandingPaymentsLoading(false);
+    }
+  };
+
+  const initiateBalancePayment = async (bookingType, sourceBookingId) => {
+    const res = await fetch(`${API_URL}/payments/balances/initiate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      },
+      body: JSON.stringify({ booking_type: bookingType, source_booking_id: sourceBookingId })
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(payload.error || 'Failed to start the balance payment');
+    }
+    return payload; // { bookingId, amount, GatewayPageURL }
+  };
+
+  // Admin-side view of the same data: balances that blew past the 3-day
+  // grace period, across every organizer. Derived live server-side, so it
+  // clears itself as soon as the organizer pays.
+  const refreshOverduePaymentAlerts = async () => {
+    if (!authToken || realUser?.role !== 'admin') {
+      setOverduePaymentAlerts([]);
+      return [];
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/payments/balances/overdue`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (!res.ok) throw new Error('Failed to load overdue payment alerts');
+      const rows = await res.json();
+      setOverduePaymentAlerts(rows);
+      return rows;
+    } catch (err) {
+      console.warn('Could not load overdue payment alerts:', err.message);
+      return [];
+    }
+  };
+
+  // Event cancellation is request-based: an organizer files a reason and an
+  // admin has to approve it before the event is ever marked cancelled (see
+  // cancellationRequests.controller.js). Nothing here changes an event's
+  // status directly — the server does that, and only on approval.
+  const requestEventCancellation = async (eventId, reason) => {
+    const res = await fetch(`${API_URL}/cancellation-requests`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      },
+      body: JSON.stringify({ event_id: eventId, reason })
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(payload.error || 'Failed to submit the cancellation request');
+    }
+    setCancellationRequests(prev => [payload, ...prev.filter(r => r.id !== payload.id)]);
+    addActivity({
+      title: 'Cancellation requested',
+      description: `Awaiting admin review for "${payload.eventTitle}"`,
+      type: 'event'
+    });
+    return payload;
+  };
+
+  const refreshCancellationRequests = async () => {
+    if (!authToken || !realUser) {
+      setCancellationRequests([]);
+      return [];
+    }
+
+    // Organizers get their own history; admins get the whole review queue.
+    const path = realUser.role === 'admin' ? '/cancellation-requests' : '/cancellation-requests/mine';
+    if (realUser.role !== 'admin' && realUser.role !== 'organizer') {
+      setCancellationRequests([]);
+      return [];
+    }
+
+    try {
+      const res = await fetch(`${API_URL}${path}`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (!res.ok) throw new Error('Failed to load cancellation requests');
+      const rows = await res.json();
+      setCancellationRequests(rows);
+      return rows;
+    } catch (err) {
+      console.warn('Could not load cancellation requests:', err.message);
+      return [];
+    }
+  };
+
+  // Admin decision. Approving is what actually cancels the event server-side,
+  // so the local events list is patched to match rather than guessed at.
+  const reviewCancellationRequest = async (requestId, decision, reviewNote) => {
+    const res = await fetch(`${API_URL}/cancellation-requests/${requestId}/review`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      },
+      body: JSON.stringify({ decision, review_note: reviewNote || null })
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(payload.error || 'Failed to review the cancellation request');
+    }
+
+    setCancellationRequests(prev => prev.map(r => (r.id === payload.id ? payload : r)));
+
+    if (decision === 'approved') {
+      setEvents(prev => prev.map(e => (e.id === payload.eventId ? { ...e, status: 'Cancelled' } : e)));
+    }
+
+    addActivity({
+      title: `Cancellation ${decision}`,
+      description: `"${payload.eventTitle}" — ${decision === 'approved' ? 'event marked cancelled' : 'event stays active'}`,
+      type: 'event'
+    });
+    return payload;
+  };
+
+  // All of these hang off the real session, so they (re)load whenever it
+  // changes — including clearing out on logout.
+  useEffect(() => {
+    refreshOutstandingPayments();
+    refreshOverduePaymentAlerts();
+    refreshCancellationRequests();
+  }, [authToken, realUser]);
+
+  // Creating an event as a real, logged-in organizer is gated behind
+  // EventFlow's flat platform convenience fee — the event itself doesn't
+  // get a row in `events` until the SSLCommerz payment clears (see
+  // payments.controller.js#confirmPaidBooking); this just starts that
+  // checkout from the submitted Create Event form. Demo/perspective-switcher
+  // mode has no real session to charge, so CreateEvent.jsx falls back to
+  // the free, instant `addEvent` instead of calling this at all.
+  const initiateEventCreationFee = async (newEvent) => {
+    const res = await fetch(`${API_URL}/events/fee/initiate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      },
+      body: JSON.stringify({
+        title: newEvent.title,
+        description: newEvent.description,
+        category_id: newEvent.categoryId ?? null,
+        start_datetime: toDateTime(newEvent.startDate, '09:00:00'),
+        end_datetime: toDateTime(newEvent.endDate || newEvent.startDate, '17:00:00'),
+        budget: parseBudget(newEvent.budget)
+      })
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(payload.error || 'Failed to start the platform fee payment');
+    }
+    return payload; // { feeId, GatewayPageURL }
   };
 
   // Venue assignment is payment-gated (see Venues.jsx) — events.venue_id is
@@ -2034,6 +2266,10 @@ export function EventFlowProvider({ children }) {
         feedbackLoading,
         taskFeedback,
         taskFeedbackLoading,
+        outstandingPayments,
+        outstandingPaymentsLoading,
+        overduePaymentAlerts,
+        cancellationRequests,
         users,
         categories,
         categoriesLoading,
@@ -2057,6 +2293,13 @@ export function EventFlowProvider({ children }) {
         addFeedback,
         addTaskFeedback,
         markTaskFeedbackRead,
+        initiateEventCreationFee,
+        refreshOutstandingPayments,
+        initiateBalancePayment,
+        refreshOverduePaymentAlerts,
+        requestEventCancellation,
+        refreshCancellationRequests,
+        reviewCancellationRequest,
         checkVenueAvailability,
         initiateVenueBooking,
         refreshEvents,

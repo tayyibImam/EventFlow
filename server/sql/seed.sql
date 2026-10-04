@@ -1,4 +1,11 @@
 SET FOREIGN_KEY_CHECKS = 0;
+-- Payment ledgers first: they reference events/users, so leaving them behind
+-- would strand rows pointing at ids that the truncations below delete.
+TRUNCATE TABLE balance_payments;
+TRUNCATE TABLE event_cancellation_requests;
+TRUNCATE TABLE event_creation_fees;
+TRUNCATE TABLE venue_bookings;
+TRUNCATE TABLE vendor_bookings;
 TRUNCATE TABLE event_guests;
 TRUNCATE TABLE event_vendors;
 TRUNCATE TABLE task_feedback;

@@ -11,15 +11,22 @@ import {
   TrendingUp,
   Activity,
   CheckCircle2,
-  Server
+  Server,
+  Wallet,
+  Ban
 } from 'lucide-react';
 import { useEventFlow } from '../context/EventFlowContext';
 import DashboardCard from '../component/DashboardCard';
 import StatusBadge from '../component/StatusBadge';
 import Button from '../component/Button';
 
+function formatTaka(amount) {
+  return `৳${Number(amount || 0).toLocaleString()}`;
+}
+
 export default function AdminDashboard() {
-  const { events, adminStats, categories, activities, vipAlerts, users, venues, vendors } = useEventFlow();
+  const { events, adminStats, categories, activities, vipAlerts, users, venues, vendors, overduePaymentAlerts, cancellationRequests } = useEventFlow();
+  const pendingCancellations = cancellationRequests.filter((r) => r.status === 'pending');
   const totalEvents = events.length;
   const totalVenues = venues.length;
   const totalVendors = vendors.length;
@@ -201,6 +208,94 @@ export default function AdminDashboard() {
                 <span className="font-semibold text-slate-700">Role-Based Access</span>
                 <span className="font-bold text-slate-800">4 Active Roles</span>
               </div>
+            </div>
+          </div>
+
+          {/* Cancellation requests waiting on a decision. An organizer can
+              only ever request — the event stays active until approved here
+              (see cancellationRequests.controller.js). */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-bold text-[#1B3A5C]">
+                Cancellation Requests
+              </h3>
+              {pendingCancellations.length > 0 && (
+                <span className="text-[10px] font-bold text-amber-600 uppercase">
+                  {pendingCancellations.length} Awaiting Review
+                </span>
+              )}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {pendingCancellations.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">
+                  No cancellation requests awaiting review.
+                </p>
+              ) : (
+                <>
+                  {pendingCancellations.slice(0, 3).map((r) => (
+                    <div key={r.id} className="text-xs p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2">
+                      <Ban className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <p className="font-bold text-amber-900 truncate">"{r.eventTitle}"</p>
+                        <p className="text-amber-800 text-[11px] mt-0.5">
+                          {r.organizerName} asked to cancel — "{r.reason}"
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  <Link
+                    to="/admin/cancellations"
+                    className="block text-center text-[11px] font-bold text-[#1B3A5C] hover:underline pt-1"
+                  >
+                    Review all {pendingCancellations.length} request{pendingCancellations.length === 1 ? '' : 's'} &rarr;
+                  </Link>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Post-event balances an organizer hasn't settled within the
+              3-day window. Derived live server-side from paid deposits on
+              finished events (see balancePayments.controller.js), so an
+              entry clears itself the moment the organizer pays — and each
+              one also emails the admins once when it first goes overdue. */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-bold text-[#1B3A5C]">
+                Overdue Payments
+              </h3>
+              {overduePaymentAlerts.length > 0 && (
+                <span className="text-[10px] font-bold text-rose-500 uppercase">
+                  {overduePaymentAlerts.length} Needs Action
+                </span>
+              )}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {overduePaymentAlerts.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">
+                  No overdue post-event balances right now.
+                </p>
+              ) : (
+                overduePaymentAlerts.map((alert) => (
+                  <div
+                    key={`${alert.bookingType}-${alert.sourceBookingId}`}
+                    className="text-xs p-2.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2"
+                  >
+                    <Wallet className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="font-bold text-rose-800">
+                        {formatTaka(alert.balanceAmount)} unpaid on "{alert.eventTitle}"
+                      </p>
+                      <p className="text-rose-700 text-[11px] mt-0.5">
+                        {alert.organizerName} ({alert.organizerEmail}) still owes the {alert.bookingType} balance
+                        for {alert.payeeName}. Was due {String(alert.dueDate).split(' ')[0]} — follow up with the organizer.
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
